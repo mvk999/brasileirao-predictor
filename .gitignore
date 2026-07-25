@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Machine learning artifacts
+artifacts/
+models/
+*.joblib
+*.pkl
+*.pickle
+
+# Data files
+data/raw/
+data/processed/
+*.csv
+*.parquet
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.egg-info/
