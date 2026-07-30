@@ -1,22 +1,51 @@
 # Brasileirão Predictor
 
-Aplicação educacional para importar dados históricos do Campeonato Brasileiro,
-treinar modelos estatísticos e de machine learning e gerar previsões
-probabilísticas para partidas futuras.
+Fundação Django do projeto `brasileirao-predictor`, executada com PostgreSQL
+por meio do Docker Compose.
 
-## Estado do projeto
+## Configuração
 
-Projeto em desenvolvimento.
+Crie o arquivo local de variáveis de ambiente:
 
-## Objetivos
+```bash
+cp .env.example .env
+```
 
-- Importar partidas e resultados históricos.
-- Calcular estatísticas dos clubes.
-- Treinar e versionar modelos preditivos.
-- Gerar previsões probabilísticas.
-- Avaliar previsões após os jogos.
-- Utilizar LLM apenas para explicar resultados calculados pelo modelo.
+Os valores de `.env.example` são apenas para desenvolvimento local.
 
-## Regras de desenvolvimento
+## Execução
 
-Leia o arquivo [AGENTS.md](AGENTS.md) antes de realizar qualquer alteração.
+Construa as imagens e inicie a aplicação:
+
+```bash
+docker compose up --build
+```
+
+A aplicação ficará disponível em <http://localhost:8000> e o endpoint de
+verificação em <http://localhost:8000/health/>.
+
+Em outro terminal, execute as migrations iniciais:
+
+```bash
+docker compose exec web python manage.py migrate
+```
+
+## Verificações
+
+Com os containers em execução:
+
+```bash
+docker compose exec web ruff format --check .
+docker compose exec web ruff check .
+docker compose exec web pytest
+docker compose exec web python manage.py check
+docker compose exec web python manage.py makemigrations --check --dry-run
+```
+
+## Encerramento
+
+Interrompa e remova os containers:
+
+```bash
+docker compose down
+```
