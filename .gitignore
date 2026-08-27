@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Testing and tooling
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -10,35 +12,29 @@ __pycache__/
 coverage.xml
 htmlcov/
 
-# Virtual environment
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual environments
 .venv/
 venv/
 env/
-
-# Django
-*.log
-db.sqlite3
-db.sqlite3-journal
-staticfiles/
-media/
 
 # Environment variables and secrets
 .env
 .env.*
 !.env.example
 
-# Machine learning artifacts
+# Generated model artifacts
 artifacts/
 models/
 *.joblib
 *.pkl
 *.pickle
 
-# Data files
+# Data generated or obtained by the pipeline
 data/raw/
 data/processed/
-*.csv
-*.parquet
 
 # IDEs
 .idea/
@@ -50,7 +46,7 @@ data/processed/
 .DS_Store
 Thumbs.db
 
-# Build
+# Python build artifacts
 build/
 dist/
 *.egg-info/
