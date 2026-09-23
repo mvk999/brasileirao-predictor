@@ -8,6 +8,11 @@ uma primeira referência de classificação de resultados.
 > **Estado atual:** há avaliação retrospectiva e um modelo salvo localmente.
 > Ainda não existe uma interface para informar um jogo futuro e obter previsão.
 
+A trajetória, as evidências e as limitações estão no
+[histórico do projeto](docs/EVOLUCAO.md), disponível também como
+[relatório em PDF](docs/evolucao-do-projeto.pdf). Para atualizar os dois formatos,
+edite `docs/evolucao.yaml` e execute `python docs/build_report.py`.
+
 ## O que já existe
 
 - Pipeline em Python para carregar, limpar, padronizar e validar os jogos.
@@ -209,6 +214,7 @@ src/data/prepare_matches.py    Pipeline e validações da base de partidas
 src/model/train_baseline.py     Treino e avaliação temporal do primeiro modelo
 tests/                         Testes do pipeline
 notebooks/                     Exploração e engenharia de features
+docs/                          Histórico editável e relatório visual em PDF
 data/raw/                      CSV baixado localmente (não versionado)
 data/processed/                CSV gerado pelo pipeline (não versionado)
 .env.example                   Exemplo de variáveis para integrações futuras

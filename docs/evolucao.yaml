@@ -1,0 +1,102 @@
+titulo: Brasileirão Predictor
+edicao: 1
+atualizado_em: 2026-09-23
+subtitulo: Da ideia inicial à primeira avaliação retrospectiva
+
+origem:
+  data: 2026-07-25
+  commit: fee7978
+  descricao: >-
+    O repositório começou como um projeto educacional. O README inicial
+    descrevia o plano de importar partidas históricas, calcular estatísticas,
+    treinar modelos e, futuramente, gerar previsões probabilísticas. Esses
+    itens eram objetivos, não funcionalidades prontas.
+
+marcos:
+  - data: 2026-07-25
+    titulo: Ideia e estrutura inicial
+    detalhe: README com objetivos, configurações básicas e organização do repositório.
+    evidencia: fee7978
+    fase: Ideia
+  - data: 2026-08-27
+    titulo: Inspeção do CSV histórico
+    detalhe: Primeiro notebook de entendimento, verificação de datas, resultados e cobertura.
+    evidencia: aece4c2
+    fase: Dados
+  - data: 2026-09-05
+    titulo: Pipeline de preparação
+    detalhe: Script, testes e recorte validado de 2020 a 2024; exploração de features em notebook.
+    evidencia: 771ac26, 6337e36
+    fase: Dados
+  - data: 2026-09-06
+    titulo: Estado documentado
+    detalhe: README passou a separar claramente exploração de uma previsão funcional.
+    evidencia: 96f23d7
+    fase: Documentação
+  - data: 2026-09-23
+    titulo: Features por partida
+    detalhe: Ordem cronológica corrigida e base com seis métricas para cada time.
+    evidencia: ccaabcb
+    fase: Features
+  - data: 2026-09-23
+    titulo: Primeiro modelo avaliado
+    detalhe: Regressão logística e referência simples, com validação em 2023 e teste em 2024.
+    evidencia: c544fac
+    fase: Modelo
+
+dados:
+  temporadas: [2020, 2021, 2022, 2023, 2024]
+  jogos_por_temporada: [380, 380, 380, 380, 380]
+  total_jogos: 1900
+  colunas_base_features: 19
+  features_por_partida: 12
+  alvo: 'H = mandante; D = empate; A = visitante'
+  nota: >-
+    O histórico de cada clube considera somente jogos anteriores na mesma
+    temporada. Médias dos primeiros jogos ficam vazias por falta de histórico.
+
+modelo:
+  tipo: Regressão logística multiclasse
+  entrada: 12 métricas históricas de mandante e visitante
+  preparo: Mediana aprendida no treino, indicadores de ausência e padronização
+  referencia: Classe mais frequente no treino (DummyClassifier com prior)
+  treino: '2020–2022: 1.140 jogos'
+  validacao: '2023: 380 jogos'
+  teste: '2024: 380 jogos'
+  retreino: 'O modelo foi treinado novamente com 2020–2023 antes do teste final de 2024.'
+  metricas:
+    validacao_2023:
+      referencia: {acuracia: 0.4684210526, f1_macro: 0.2126642772, log_loss: 1.0617296398}
+      regressao: {acuracia: 0.4921052632, f1_macro: 0.3311164757, log_loss: 1.0568007836}
+    teste_2024:
+      referencia: {acuracia: 0.4736842105, f1_macro: 0.2142857143, log_loss: 1.0573890076}
+      regressao: {acuracia: 0.4815789474, f1_macro: 0.3265839261, log_loss: 1.0349305515}
+  classes: [A, D, H]
+  reais_2024: [99, 101, 180]
+  previstas_2024: [40, 17, 323]
+  matriz_confusao_2024:
+    - [13, 4, 82]
+    - [12, 9, 80]
+    - [15, 4, 161]
+
+estado_atual:
+  entregue:
+    - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
+    - Base com 12 features históricas por partida.
+    - Primeiro modelo treinado e comparado com uma referência simples.
+    - Métricas e previsões retrospectivas de 2024 geradas localmente.
+  limites:
+    - O ganho de acurácia em 2024 foi pequeno, de 47,4% para 48,2%.
+    - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
+    - Ainda não há fluxo para montar features de uma partida futura.
+    - A fonte processada cobre apenas até a temporada de 2024.
+  proximos_passos:
+    - Investigar erros por classe, principalmente empates e vitórias do visitante.
+    - Comparar novas features e métodos usando novas validações temporais.
+    - Atualizar a fonte de dados e gerar features para partidas não disputadas.
+    - Criar uma interface somente após validar o fluxo de previsão futura.
+
+fontes:
+  - 'Histórico Git do próprio repositório: commits fee7978 a c544fac.'
+  - 'README.md, src/data/prepare_matches.py e src/model/train_baseline.py.'
+  - 'artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.'
