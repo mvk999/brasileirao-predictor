@@ -1,7 +1,7 @@
 titulo: Brasileirão Predictor
-edicao: 2
+edicao: 3
 atualizado_em: 2026-09-23
-subtitulo: Da ideia inicial ao diagnóstico da primeira validação
+subtitulo: Da ideia inicial ao experimento com empates
 
 origem:
   data: 2026-07-25
@@ -48,6 +48,11 @@ marcos:
     detalhe: Matriz de confusão, métricas por classe, faixas de confiança e exemplos de erros.
     evidencia: '3066650'
     fase: Diagnóstico
+  - data: 2026-09-23
+    titulo: Experimento com empates
+    detalhe: Limites de decisão e três sinais de equilíbrio comparados com validação temporal.
+    evidencia: experiment_draws.py
+    fase: Experimento
 
 dados:
   temporadas: [2020, 2021, 2022, 2023, 2024]
@@ -112,21 +117,47 @@ diagnostico_validacao_2023:
     - {id: 8090, data: 2023-05-20, mandante: America-MG, visitante: Fortaleza, real: H, previsto: A, confianca: 0.6641986514}
     - {id: 8041, data: 2023-04-23, mandante: Santos, visitante: Atletico-MG, real: D, previsto: H, confianca: 0.6601370241}
 
+experimento_empates:
+  protocolo: >-
+    Treino 2020–2021 e escolha do limite em 2022 pelo maior F1 macro;
+    retreino 2020–2022 e avaliação em 2023. A temporada 2024 não foi usada.
+    O limite é escolhido separadamente para cada conjunto de features.
+  features: >-
+    Diferença absoluta de pontos por jogo, diferença absoluta de gols
+    estimados e interação entre essa diferença e o total estimado de gols.
+    Tudo deriva de médias de partidas anteriores à partida avaliada.
+  interpretacao: >-
+    O limite de 0,35 da referência elevou o F1 macro de 0,331 para 0,357,
+    com 10 dos 98 empates reconhecidos. As features adicionais com limite
+    de 0,34 elevaram o F1 macro a 0,370 e reconheceram 18 empates, mas a
+    acurácia ficou em 0,489 ante 0,492 da referência. O ganho é exploratório:
+    uma única temporada de validação e 2023 já havia sido inspecionada.
+    O modelo usado pelo projeto não foi substituído.
+  referencia_padrao: {limiar: 'maior probabilidade', acuracia: 0.4921052632, f1_macro: 0.3311164757, log_loss: 1.0568007836, previstos_d: 7, corretos_d: 5, precisao_d: 0.7142857143, revocacao_d: 0.0510204082}
+  referencia_ajustada: {limiar: 0.35, acuracia: 0.4973684211, f1_macro: 0.3574879850, log_loss: 1.0568007836, previstos_d: 21, corretos_d: 10, precisao_d: 0.4761904762, revocacao_d: 0.1020408163}
+  equilibrio_ajustado: {limiar: 0.34, acuracia: 0.4894736842, f1_macro: 0.3696428571, log_loss: 1.0546383493, previstos_d: 42, corretos_d: 18, precisao_d: 0.4285714286, revocacao_d: 0.1836734694}
+  troca_limiares:
+    - {limiar: 0.25, previstos_d: 304, corretos_d: 76, falsos_d: 228, acuracia: 0.2947368421}
+    - {limiar: 0.30, previstos_d: 126, corretos_d: 36, falsos_d: 90, acuracia: 0.4315789474}
+    - {limiar: 0.35, previstos_d: 21, corretos_d: 10, falsos_d: 11, acuracia: 0.4973684211}
+
 estado_atual:
   entregue:
     - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
     - Base com 12 features históricas por partida.
     - Primeiro modelo treinado e comparado com uma referência simples.
     - Diagnóstico de erros de 2023 e previsões retrospectivas de 2024 gerados localmente.
+    - Experimento de empates reproduzível, sem trocar o modelo principal.
   limites:
     - O ganho de acurácia em 2024 foi pequeno, de 47,4% para 48,2%.
     - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
     - Em 2023, reconheceu somente 5 dos 98 empates reais.
+    - O melhor resultado exploratório para empates ainda precisa de validação em dados novos.
     - Ainda não há fluxo para montar features de uma partida futura.
     - A fonte processada cobre apenas até a temporada de 2024.
   proximos_passos:
-    - Investigar as causas da baixa revocação de empates e vitórias do visitante.
-    - Comparar novas features e métodos usando novas validações temporais.
+    - Comparar sinais de equilíbrio e métodos em novas validações temporais.
+    - Reunir uma temporada nova para confirmar se a melhora em empates se repete.
     - Atualizar a fonte de dados e gerar features para partidas não disputadas.
     - Criar uma interface somente após validar o fluxo de previsão futura.
 
@@ -135,3 +166,4 @@ fontes:
   - 'README.md, src/data/prepare_matches.py e src/model/train_baseline.py.'
   - 'artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.'
   - 'artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.'
+  - 'src/model/experiment_draws.py e artifacts/draw_experiment.json, gerado localmente.'

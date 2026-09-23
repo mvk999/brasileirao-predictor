@@ -148,6 +148,40 @@ def verify_local_diagnostics(data: dict) -> None:
             raise ValueError(f"Confiança do erro {item['id']} difere do diagnóstico local.")
 
 
+def verify_local_draw_experiment(data: dict) -> None:
+    """Evita publicar números do experimento diferentes do relatório gerado."""
+    path = ROOT / "artifacts/draw_experiment.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))["feature_sets"]
+    recorded = data["experimento_empates"]
+    mapping = (
+        ("referencia_padrao", measured["baseline"]["validation_2023_default"]),
+        ("referencia_ajustada", measured["baseline"]["validation_2023_adjusted"]),
+        ("equilibrio_ajustado", measured["balance_features"]["validation_2023_adjusted"]),
+    )
+    for name, actual in mapping:
+        row = recorded[name]
+        for documented, generated in (("acuracia", "accuracy"), ("f1_macro", "f1_macro"),
+                                      ("log_loss", "log_loss"), ("precisao_d", "draw_precision"),
+                                      ("revocacao_d", "draw_recall")):
+            if abs(row[documented] - actual[generated]) > 0.000001:
+                raise ValueError(f"Experimento desatualizado em {name}/{documented}.")
+        for documented, generated in (("previstos_d", "draw_predicted"), ("corretos_d", "draw_correct")):
+            if row[documented] != actual[generated]:
+                raise ValueError(f"Experimento desatualizado em {name}/{documented}.")
+    for name, key in (("referencia_ajustada", "baseline"), ("equilibrio_ajustado", "balance_features")):
+        if recorded[name]["limiar"] != measured[key]["threshold"]:
+            raise ValueError(f"Limiar desatualizado em {name}.")
+    for row in recorded["troca_limiares"]:
+        actual = measured["baseline"]["validation_2023_illustrative"][f"{row['limiar']:.2f}"]
+        if (row["previstos_d"] != actual["draw_predicted"]
+                or row["corretos_d"] != actual["draw_correct"]
+                or row["falsos_d"] != actual["draw_predicted"] - actual["draw_correct"]
+                or abs(row["acuracia"] - actual["accuracy"]) > 0.000001):
+            raise ValueError(f"Troca de erros desatualizada no limiar {row['limiar']}.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
@@ -302,7 +336,48 @@ def make_markdown(data: dict) -> str:
             f"(ID {item['id']}) | {item['real']} | {item['previsto']} | "
             f"{percentage(item['confianca'])} |"
         )
-    lines += ["", "## O que existe hoje", ""]
+    experiment = data["experimento_empates"]
+    lines += [
+        "",
+        "## Experimento com empates",
+        "",
+        experiment["protocolo"],
+        "",
+        "A regra ajustada escolhe empate quando sua probabilidade atinge o",
+        "limite; caso contrário, escolhe entre mandante e visitante. A tabela",
+        "mostra o desempenho em 2023. A mudança de limite não altera as",
+        "probabilidades, então o log loss da mesma linha de modelo não muda.",
+        "",
+        "| Método | Limite D | Acurácia | F1 macro | Log loss | D previstos | D corretos | Precisão D | Revocação D |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for key, title in (("referencia_padrao", "Referência original"),
+                       ("referencia_ajustada", "Referência com limite"),
+                       ("equilibrio_ajustado", "Equilíbrio com limite")):
+        row = experiment[key]
+        lines.append(
+            f"| {title} | {row['limiar']} | {percentage(row['acuracia'])} | "
+            f"{decimal(row['f1_macro'])} | {decimal(row['log_loss'])} | "
+            f"{row['previstos_d']} | {row['corretos_d']} | "
+            f"{percentage(row['precisao_d'])} | {percentage(row['revocacao_d'])} |"
+        )
+    lines += [
+        "",
+        "**Novos sinais testados:** " + experiment["features"],
+        "",
+        "### Troca entre empates encontrados e falsos empates",
+        "",
+        "Os limites abaixo são apenas ilustrativos em 2023, com o modelo de 12 features.",
+        "",
+        "| Limite | Empates previstos | Empates corretos | Falsos empates | Acurácia |",
+        "| ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in experiment["troca_limiares"]:
+        lines.append(
+            f"| {row['limiar']:.2f} | {row['previstos_d']} | {row['corretos_d']} | "
+            f"{row['falsos_d']} | {percentage(row['acuracia'])} |"
+        )
+    lines += ["", "**Conclusão:** " + experiment["interpretacao"], "", "## O que existe hoje", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["limites"]]
@@ -313,7 +388,7 @@ def make_markdown(data: dict) -> str:
         "## Como manter este histórico",
         "",
         "1. Ao concluir uma mudança, adicione um marco datado em `docs/evolucao.yaml`",
-        "   com o commit que comprova o que foi feito.",
+        "   com o arquivo ou commit que comprova o que foi feito.",
         "2. Atualize números e conclusões apenas depois de gerar e conferir as",
         "   saídas do projeto. Registre limites e trabalho pendente.",
         "3. Na raiz do repositório, execute `python docs/build_report.py` e revise",
@@ -398,7 +473,7 @@ def cover(data: dict, total: int):
 
 
 def history_page(data: dict, items: list[dict], number: int, total: int):
-    fig = page("Como o projeto chegou até aqui", "Trajetória verificada no Git", number, total)
+    fig = page("Como o projeto chegou até aqui", "Trajetória documentada", number, total)
     fig.lines.append(mpl.lines.Line2D([0.105, 0.105], [0.17, 0.79], transform=fig.transFigure,
                                        color=TEAL, lw=2.2))
     for index, item in enumerate(items):
@@ -634,13 +709,63 @@ def confidence_page(data: dict, number: int, total: int):
     return fig
 
 
+def draw_experiment_page(data: dict, number: int, total: int):
+    fig = page("Empates: medir o ganho e o custo", "Experimento temporal", number, total)
+    experiment = data["experimento_empates"]
+    rows = experiment["troca_limiares"]
+
+    box(fig, 0.06, 0.41, 0.42, 0.40)
+    label(fig, 0.085, 0.77, "LIMITE × ACERTOS E FALSOS EMPATES", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.11, 0.50, 0.32, 0.22], facecolor=WHITE)
+    ax.set_zorder(3)
+    x = np.arange(len(rows))
+    ax.bar(x, [item["corretos_d"] for item in rows], color=TEAL, label="Corretos")
+    ax.bar(x, [item["falsos_d"] for item in rows], bottom=[item["corretos_d"] for item in rows],
+           color="#B5C7CF", label="Falsos")
+    ax.set_xticks(x, [f"{item['limiar']:.2f}" for item in rows])
+    ax.set_yticks([0, 100, 200, 300])
+    ax.set_ylim(0, 335)
+    ax.tick_params(axis="both", labelsize=8, length=0)
+    ax.legend(frameon=False, fontsize=7, loc="upper right")
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    for i, item in enumerate(rows):
+        ax.text(i, item["previstos_d"] + 7, str(item["previstos_d"]), ha="center", size=8, color=INK)
+    label(fig, 0.12, 0.465, "Limiar de probabilidade de empate", size=8, color=MUTED)
+
+    box(fig, 0.52, 0.41, 0.42, 0.40)
+    label(fig, 0.55, 0.77, "COMPARAÇÃO EM 2023", size=10, color=TEAL, weight="bold")
+    names = (("referencia_padrao", "Modelo original"),
+             ("referencia_ajustada", "Limite ajustado"),
+             ("equilibrio_ajustado", "Equilíbrio + limite"))
+    label(fig, 0.55, 0.69, "MÉTODO", size=8, color=MUTED)
+    label(fig, 0.76, 0.69, "F1 MACRO", size=8, color=MUTED, ha="center")
+    label(fig, 0.88, 0.69, "EMPATES", size=8, color=MUTED, ha="center")
+    for i, (key, name) in enumerate(names):
+        y = 0.62 - i * 0.085
+        row = experiment[key]
+        label(fig, 0.55, y, name, size=9, color=INK, weight="bold" if i == 2 else "normal")
+        label(fig, 0.76, y, decimal(row["f1_macro"]), size=10, color=TEAL, ha="center")
+        label(fig, 0.88, y, f"{row['corretos_d']}/{row['previstos_d']}", size=9, color=INK, ha="center")
+    box(fig, 0.06, 0.14, 0.88, 0.22, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.32, "O QUE APRENDEMOS", size=10, color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.275,
+            "O limite de 0,25 encontrou 76 empates, mas gerou 228 falsos empates. "
+            "Com sinais de equilíbrio e o limite escolhido em 2022, o F1 macro subiu "
+            "de 0,331 para 0,370 em 2023; a acurácia caiu de 0,492 para 0,489. "
+            "O limite foi escolhido em 2022; 2024 não entrou no experimento. "
+            "É um resultado exploratório de uma temporada. O modelo principal continua igual.",
+            120, size=9, color=INK)
+    return fig
+
+
 def next_page(data: dict, number: int, total: int):
     fig = page("O que falta e como acompanhar", "Próxima edição", number, total)
     current = data["estado_atual"]
     box(fig, 0.06, 0.43, 0.42, 0.38)
     label(fig, 0.09, 0.765, "ENTREGUE", size=10, color=TEAL, weight="bold")
     for i, text in enumerate(current["entregue"]):
-        y = 0.71 - i * 0.077
+        y = 0.71 - i * 0.061
         label(fig, 0.09, y, "✓", size=12, color=TEAL, weight="bold")
         wrapped(fig, 0.12, y + 0.001, text, 43, size=9, color=INK)
     box(fig, 0.52, 0.43, 0.42, 0.38)
@@ -653,7 +778,7 @@ def next_page(data: dict, number: int, total: int):
     box(fig, 0.06, 0.17, 0.88, 0.20, face=NAVY, edge=NAVY)
     label(fig, 0.09, 0.33, "COMO ESTE REGISTRO CONTINUA", size=10, color=GOLD, weight="bold")
     wrapped(fig, 0.09, 0.29,
-            "Ao concluir uma mudança: adicione um marco com data e commit em docs/evolucao.yaml; "
+            "Ao concluir uma mudança: adicione um marco com data e evidência em docs/evolucao.yaml; "
             "atualize apenas números medidos; execute python docs/build_report.py; "
             "revise o Markdown e o PDF; publique os três arquivos juntos.",
             124, size=10, color=WHITE)
@@ -664,8 +789,8 @@ def next_page(data: dict, number: int, total: int):
 
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
-    history_chunks = [milestones[i : i + 7] for i in range(0, len(milestones), 7)] or [[]]
-    total_pages = 6 + len(history_chunks)
+    history_chunks = [milestones[i : i + 4] for i in range(0, len(milestones), 4)] or [[]]
+    total_pages = 7 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -673,10 +798,11 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 4, total_pages),
-            model_page(data, total_pages - 3, total_pages),
-            validation_page(data, total_pages - 2, total_pages),
-            confidence_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 5, total_pages),
+            model_page(data, total_pages - 4, total_pages),
+            validation_page(data, total_pages - 3, total_pages),
+            confidence_page(data, total_pages - 2, total_pages),
+            draw_experiment_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -692,6 +818,7 @@ def main() -> None:
     data = load_history()
     verify_local_metrics(data)
     verify_local_diagnostics(data)
+    verify_local_draw_experiment(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")

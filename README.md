@@ -222,11 +222,37 @@ mostram acerto observado em grupos de tamanhos diferentes; são um diagnóstico
 descritivo, não uma garantia de calibração. A análise completa, com tabelas e
 gráficos, está no [histórico do projeto](docs/EVOLUCAO.md).
 
+### 7. Reproduza o experimento com empates
+
+Com a base de features já gerada, execute:
+
+```bash
+python -m src.model.experiment_draws
+python docs/build_report.py
+```
+
+O experimento treina com 2020--2021 para escolher, em 2022, um limite de
+probabilidade de empate que maximize o F1 macro. Depois treina com 2020--2022
+e mede o resultado em 2023. Faz isso para as 12 features originais e para
+três sinais adicionais de equilíbrio derivados das médias **anteriores ao
+jogo**. Não consulta 2024 e não substitui o modelo salvo pelo treino principal.
+
+Na base desta edição, o primeiro comando mostra `baseline: limiar=0.35` e
+`balance_features: limiar=0.34`. O modelo original reconhece 5 empates em 7
+previsões; com o limite de 0,35 reconhece 10 em 21; com sinais de equilíbrio e
+limite de 0,34 reconhece 18 em 42. O F1 macro de 2023 vai de 0,331 para 0,357
+e 0,370, respectivamente. A acurácia da última opção cai de 0,492 para 0,489.
+Os resultados completos são gravados em `artifacts/draw_experiment.json` e
+registrados no [histórico do projeto](docs/EVOLUCAO.md) e no PDF. A conclusão
+é exploratória: 2023 é uma única temporada e já havia sido inspecionada.
+Precisamos de dados novos para confirmar o ganho antes de trocar o modelo.
+
 ## Estrutura do repositório
 
 ```text
 src/data/prepare_matches.py    Pipeline e validações da base de partidas
 src/model/train_baseline.py     Treino e avaliação temporal do primeiro modelo
+src/model/experiment_draws.py   Comparação temporal de regras e sinais de empate
 tests/                         Testes do pipeline
 notebooks/                     Exploração e engenharia de features
 docs/                          Histórico editável e relatório visual em PDF

@@ -1,6 +1,6 @@
 # Evolução do Brasileirão Predictor
 
-**Edição 2 · Atualizado em 23/09/2026**
+**Edição 3 · Atualizado em 23/09/2026**
 
 Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos
 editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.
@@ -22,6 +22,7 @@ Evidência inicial: commit `fee7978` de 25/07/2026.
 | 23/09/2026 | Features por partida | Ordem cronológica corrigida e base com seis métricas para cada time. | `ccaabcb` |
 | 23/09/2026 | Primeiro modelo avaliado | Regressão logística e referência simples, com validação em 2023 e teste em 2024. | `c544fac` |
 | 23/09/2026 | Erros de 2023 analisados | Matriz de confusão, métricas por classe, faixas de confiança e exemplos de erros. | `3066650` |
+| 23/09/2026 | Experimento com empates | Limites de decisão e três sinais de equilíbrio comparados com validação temporal. | `experiment_draws.py` |
 
 ## Estado atual dos dados
 
@@ -117,32 +118,63 @@ explicam isoladamente por que ele errou.
 | 20/05/2023 | America-MG × Fortaleza (ID 8090) | H | A | 66,4% |
 | 23/04/2023 | Santos × Atletico-MG (ID 8041) | D | H | 66,0% |
 
+## Experimento com empates
+
+Treino 2020–2021 e escolha do limite em 2022 pelo maior F1 macro; retreino 2020–2022 e avaliação em 2023. A temporada 2024 não foi usada. O limite é escolhido separadamente para cada conjunto de features.
+
+A regra ajustada escolhe empate quando sua probabilidade atinge o
+limite; caso contrário, escolhe entre mandante e visitante. A tabela
+mostra o desempenho em 2023. A mudança de limite não altera as
+probabilidades, então o log loss da mesma linha de modelo não muda.
+
+| Método | Limite D | Acurácia | F1 macro | Log loss | D previstos | D corretos | Precisão D | Revocação D |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Referência original | maior probabilidade | 49,2% | 0,331 | 1,057 | 7 | 5 | 71,4% | 5,1% |
+| Referência com limite | 0.35 | 49,7% | 0,357 | 1,057 | 21 | 10 | 47,6% | 10,2% |
+| Equilíbrio com limite | 0.34 | 48,9% | 0,370 | 1,055 | 42 | 18 | 42,9% | 18,4% |
+
+**Novos sinais testados:** Diferença absoluta de pontos por jogo, diferença absoluta de gols estimados e interação entre essa diferença e o total estimado de gols. Tudo deriva de médias de partidas anteriores à partida avaliada.
+
+### Troca entre empates encontrados e falsos empates
+
+Os limites abaixo são apenas ilustrativos em 2023, com o modelo de 12 features.
+
+| Limite | Empates previstos | Empates corretos | Falsos empates | Acurácia |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.25 | 304 | 76 | 228 | 29,5% |
+| 0.30 | 126 | 36 | 90 | 43,2% |
+| 0.35 | 21 | 10 | 11 | 49,7% |
+
+**Conclusão:** O limite de 0,35 da referência elevou o F1 macro de 0,331 para 0,357, com 10 dos 98 empates reconhecidos. As features adicionais com limite de 0,34 elevaram o F1 macro a 0,370 e reconheceram 18 empates, mas a acurácia ficou em 0,489 ante 0,492 da referência. O ganho é exploratório: uma única temporada de validação e 2023 já havia sido inspecionada. O modelo usado pelo projeto não foi substituído.
+
 ## O que existe hoje
 
 - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
 - Base com 12 features históricas por partida.
 - Primeiro modelo treinado e comparado com uma referência simples.
 - Diagnóstico de erros de 2023 e previsões retrospectivas de 2024 gerados localmente.
+- Experimento de empates reproduzível, sem trocar o modelo principal.
 
 ## Limites conhecidos
 
 - O ganho de acurácia em 2024 foi pequeno, de 47,4% para 48,2%.
 - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
 - Em 2023, reconheceu somente 5 dos 98 empates reais.
+- O melhor resultado exploratório para empates ainda precisa de validação em dados novos.
 - Ainda não há fluxo para montar features de uma partida futura.
 - A fonte processada cobre apenas até a temporada de 2024.
 
 ## Próximas etapas
 
-1. Investigar as causas da baixa revocação de empates e vitórias do visitante.
-2. Comparar novas features e métodos usando novas validações temporais.
+1. Comparar sinais de equilíbrio e métodos em novas validações temporais.
+2. Reunir uma temporada nova para confirmar se a melhora em empates se repete.
 3. Atualizar a fonte de dados e gerar features para partidas não disputadas.
 4. Criar uma interface somente após validar o fluxo de previsão futura.
 
 ## Como manter este histórico
 
 1. Ao concluir uma mudança, adicione um marco datado em `docs/evolucao.yaml`
-   com o commit que comprova o que foi feito.
+   com o arquivo ou commit que comprova o que foi feito.
 2. Atualize números e conclusões apenas depois de gerar e conferir as
    saídas do projeto. Registre limites e trabalho pendente.
 3. Na raiz do repositório, execute `python docs/build_report.py` e revise
@@ -155,3 +187,4 @@ explicam isoladamente por que ele errou.
 - README.md, src/data/prepare_matches.py e src/model/train_baseline.py.
 - artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.
 - artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.
+- src/model/experiment_draws.py e artifacts/draw_experiment.json, gerado localmente.
