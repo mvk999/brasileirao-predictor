@@ -72,6 +72,16 @@ def load_history() -> dict:
         raise ValueError("A matriz de confusão não confere com as classes reais.")
     if matrix.sum(axis=0).tolist() != data["modelo"]["previstas_2024"]:
         raise ValueError("A matriz de confusão não confere com as classes previstas.")
+    validation = data["diagnostico_validacao_2023"]
+    validation_matrix = np.asarray(validation["matriz_confusao"])
+    if validation_matrix.shape != (3, 3):
+        raise ValueError("A matriz de validação deve ter três linhas e três colunas.")
+    if validation_matrix.sum(axis=1).tolist() != validation["reais"]:
+        raise ValueError("A matriz de validação não confere com as classes reais.")
+    if validation_matrix.sum(axis=0).tolist() != validation["previstas"]:
+        raise ValueError("A matriz de validação não confere com as classes previstas.")
+    if sum(band["jogos"] for band in validation["faixas_confianca"]) != 380:
+        raise ValueError("As faixas de confiança devem cobrir os 380 jogos de 2023.")
     return data
 
 
@@ -94,9 +104,54 @@ def verify_local_metrics(data: dict) -> None:
                     )
 
 
+def verify_local_diagnostics(data: dict) -> None:
+    """Confere a análise documentada com o JSON local, se ele existir."""
+    path = ROOT / "artifacts/validation_2023_diagnostics.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))
+    recorded = data["diagnostico_validacao_2023"]
+    if recorded["matriz_confusao"] != measured["confusion_matrix"]:
+        raise ValueError("A matriz de 2023 difere do diagnóstico local.")
+    for label, item in recorded["por_classe"].items():
+        actual = measured["by_class"][label]
+        for key, measured_key in (("reais", "actual"), ("previstas", "predicted"),
+                                  ("acertos", "correct")):
+            if item[key] != actual[measured_key]:
+                raise ValueError(f"Contagem de {label}/{key} difere do diagnóstico local.")
+        for key, measured_key in (("precisao", "precision"), ("revocacao", "recall"),
+                                  ("f1", "f1")):
+            if abs(item[key] - actual[measured_key]) > 0.000001:
+                raise ValueError(f"Métrica de {label}/{key} difere do diagnóstico local.")
+    if len(recorded["faixas_confianca"]) != len(measured["confidence_bands"]):
+        raise ValueError("O número de faixas de confiança difere do diagnóstico local.")
+    for item, actual in zip(recorded["faixas_confianca"], measured["confidence_bands"]):
+        if item["jogos"] != actual["matches"]:
+            raise ValueError("Faixa de confiança difere do diagnóstico local.")
+        for key, measured_key in (("inicio", "from"), ("fim", "to"),
+                                  ("confianca_media", "mean_confidence")):
+            if abs(item[key] - actual[measured_key]) > 0.000001:
+                raise ValueError(f"{key} por faixa difere do diagnóstico local.")
+        if abs(item["acerto"] - actual["accuracy"]) > 0.000001:
+            raise ValueError("Acerto por faixa difere do diagnóstico local.")
+    if len(recorded["erros_maior_confianca"]) != len(measured["most_confident_errors"]):
+        raise ValueError("O número de exemplos de erro difere do diagnóstico local.")
+    for item, actual in zip(recorded["erros_maior_confianca"], measured["most_confident_errors"]):
+        for key, measured_key in (("id", "id"), ("mandante", "home"),
+                                  ("visitante", "away"), ("real", "actual"),
+                                  ("previsto", "predicted")):
+            if item[key] != actual[measured_key]:
+                raise ValueError(f"Exemplo de erro {item['id']} difere em {key}.")
+        if str(item["data"]) != actual["date"]:
+            raise ValueError(f"Data do erro {item['id']} difere do diagnóstico local.")
+        if abs(item["confianca"] - actual["confidence"]) > 0.000001:
+            raise ValueError(f"Confiança do erro {item['id']} difere do diagnóstico local.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
+    validation = data["diagnostico_validacao_2023"]
     total_games = f"{data['dados']['total_jogos']:,}".replace(",", ".")
     lines = [
         f"# Evolução do {data['titulo']}",
@@ -179,6 +234,74 @@ def make_markdown(data: dict) -> str:
     ]
     for label, row in zip(model["classes"], model["matriz_confusao_2024"]):
         lines.append(f"| {label} | {row[0]} | {row[1]} | {row[2]} |")
+    lines += [
+        "",
+        "## Diagnóstico dos erros na validação de 2023",
+        "",
+        validation["treino"],
+        "",
+        "A matriz usa **linhas para o resultado real** e **colunas para a previsão**:",
+        "",
+        "| Real / Previsto | A | D | H |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for label, row in zip(validation["classes"], validation["matriz_confusao"]):
+        lines.append(f"| {label} | {row[0]} | {row[1]} | {row[2]} |")
+    lines += [
+        "",
+        "| Classe | Reais | Previstos | Acertos | Precisão | Revocação | F1 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for label in validation["classes"]:
+        item = validation["por_classe"][label]
+        lines.append(
+            f"| {label} | {item['reais']} | {item['previstas']} | {item['acertos']} | "
+            f"{percentage(item['precisao'])} | {percentage(item['revocacao'])} | "
+            f"{decimal(item['f1'])} |"
+        )
+    draw = validation["por_classe"]["D"]
+    home = validation["por_classe"]["H"]
+    lines += [
+        "",
+        f"O modelo reconheceu **{draw['acertos']} dos {draw['reais']} empates** "
+        f"({percentage(draw['revocacao'])} de revocação), pois só escolheu D "
+        f"em {draw['previstas']} jogos. Em contraste, acertou "
+        f"**{home['acertos']} das {home['reais']} vitórias do mandante** "
+        f"({percentage(home['revocacao'])} de revocação), mas escolheu H "
+        f"em {home['previstas']} jogos. Isso mostra concentração das previsões "
+        "em H; não demonstra, por si só, a causa do comportamento.",
+        "",
+        "### Confiança e acerto observado",
+        "",
+        "A confiança é a maior das três probabilidades previstas. Cada faixa",
+        "compara a confiança média com a proporção de acertos nas partidas nela",
+        "incluídas. Faixas pequenas exigem cautela na interpretação.",
+        "",
+        "| Confiança prevista | Jogos | Confiança média | Acerto observado |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for band in validation["faixas_confianca"]:
+        lines.append(
+            f"| {percentage(band['inicio'])}–{percentage(band['fim'])} | "
+            f"{band['jogos']} | {percentage(band['confianca_media'])} | "
+            f"{percentage(band['acerto'])} |"
+        )
+    lines += [
+        "",
+        "### Cinco erros com maior confiança na classe prevista",
+        "",
+        "Esses exemplos ajudam a inspecionar o comportamento do modelo; não",
+        "explicam isoladamente por que ele errou.",
+        "",
+        "| Data | Partida | Real | Previsto | Confiança |",
+        "| --- | --- | --- | --- | ---: |",
+    ]
+    for item in validation["erros_maior_confianca"]:
+        lines.append(
+            f"| {date_br(item['data'])} | {item['mandante']} × {item['visitante']} "
+            f"(ID {item['id']}) | {item['real']} | {item['previsto']} | "
+            f"{percentage(item['confianca'])} |"
+        )
     lines += ["", "## O que existe hoje", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
@@ -279,7 +402,7 @@ def history_page(data: dict, items: list[dict], number: int, total: int):
     fig.lines.append(mpl.lines.Line2D([0.105, 0.105], [0.17, 0.79], transform=fig.transFigure,
                                        color=TEAL, lw=2.2))
     for index, item in enumerate(items):
-        y = 0.79 - index * 0.11
+        y = 0.79 - index * (0.095 if len(items) > 6 else 0.11)
         fig.patches.append(Circle((0.105, y - 0.005), 0.010, transform=fig.transFigure,
                                   color=TEAL if index == len(items) - 1 else WHITE, ec=TEAL, lw=2))
         label(fig, 0.065, y + 0.016, date_br(item["data"]), size=8, color=MUTED, ha="center")
@@ -293,7 +416,7 @@ def history_page(data: dict, items: list[dict], number: int, total: int):
     box(fig, 0.63, 0.18, 0.31, 0.28, face="#E6F3F2", edge="#C3E3E0")
     label(fig, 0.66, 0.42, "O QUE JÁ É CONCRETO", size=10, color=TEAL, weight="bold")
     wrapped(fig, 0.66, 0.36,
-            "CSV preparado e validado; 12 métricas históricas por partida; primeiro modelo avaliado em 2024.",
+            "CSV preparado; 12 métricas por partida; modelo avaliado em 2024; erros de 2023 analisados.",
             39, size=11, color=INK)
     label(fig, 0.66, 0.23, "Objetivos iniciais e entregas têm estados distintos.", size=8, color=MUTED)
     return fig
@@ -409,6 +532,108 @@ def model_page(data: dict, number: int, total: int):
     return fig
 
 
+def validation_page(data: dict, number: int, total: int):
+    fig = page("Validação de 2023: o empate quase não aparece", "Erros por resultado", number, total)
+    validation = data["diagnostico_validacao_2023"]
+    classes = validation["classes"]
+
+    box(fig, 0.06, 0.43, 0.42, 0.38)
+    label(fig, 0.085, 0.77, "DISTRIBUIÇÃO REAL × PREVISTA", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.12, 0.51, 0.31, 0.22], facecolor=WHITE)
+    ax.set_zorder(3)
+    x = np.arange(3)
+    ax.bar(x - 0.17, validation["reais"], 0.30, label="Real", color="#B5C7CF")
+    ax.bar(x + 0.17, validation["previstas"], 0.30, label="Previsto", color=TEAL)
+    ax.set_xticks(x, classes)
+    ax.set_ylim(0, 360)
+    ax.set_yticks([0, 100, 200, 300])
+    ax.tick_params(axis="both", labelsize=8, length=0)
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=7, loc="upper left")
+    for i, (actual, predicted) in enumerate(zip(validation["reais"], validation["previstas"])):
+        ax.text(i - 0.17, actual + 6, str(actual), ha="center", fontsize=8, color=MUTED)
+        ax.text(i + 0.17, predicted + 6, str(predicted), ha="center", fontsize=8,
+                color=TEAL, fontweight="bold")
+
+    box(fig, 0.52, 0.43, 0.42, 0.38)
+    label(fig, 0.55, 0.77, "MATRIZ DE CONFUSÃO", size=10, color=TEAL, weight="bold")
+    ax2 = fig.add_axes([0.61, 0.53, 0.25, 0.22], facecolor=WHITE)
+    ax2.set_zorder(3)
+    matrix = np.asarray(validation["matriz_confusao"])
+    ax2.imshow(matrix, cmap=mpl.colors.LinearSegmentedColormap.from_list("teal23", [WHITE, TEAL]),
+               vmin=0, vmax=170)
+    ax2.set_xticks(range(3), classes)
+    ax2.set_yticks(range(3), classes)
+    ax2.set_xlabel("Previsto", fontsize=8)
+    ax2.set_ylabel("Real", fontsize=8)
+    ax2.tick_params(length=0, labelsize=9)
+    for (row, col), value in np.ndenumerate(matrix):
+        ax2.text(col, row, str(value), ha="center", va="center", fontsize=10,
+                 color=WHITE if value > 80 else INK, fontweight="bold")
+    label(fig, 0.55, 0.46, "A: visitante   D: empate   H: mandante", size=8, color=MUTED)
+
+    box(fig, 0.06, 0.14, 0.88, 0.24, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.345, "RESULTADO POR CLASSE", size=10, color=TEAL, weight="bold")
+    headings = [(0.09, "Classe"), (0.22, "Reais"), (0.34, "Previstos"),
+                (0.47, "Acertos"), (0.60, "Precisão"), (0.73, "Revocação"), (0.86, "F1")]
+    for x, heading in headings:
+        label(fig, x, 0.305, heading, size=8, color=MUTED, ha="center")
+    for index, class_name in enumerate(classes):
+        row = validation["por_classe"][class_name]
+        values = [class_name, str(row["reais"]), str(row["previstas"]), str(row["acertos"]),
+                  percentage(row["precisao"]), percentage(row["revocacao"]), decimal(row["f1"])]
+        for (x, _), value in zip(headings, values):
+            label(fig, x, 0.267 - index * 0.039, value, size=9,
+                  color=TEAL if class_name == "D" else INK,
+                  weight="bold" if class_name == "D" else "normal", ha="center")
+    return fig
+
+
+def confidence_page(data: dict, number: int, total: int):
+    fig = page("Confiança prevista e erros concretos", "Diagnóstico de 2023", number, total)
+    validation = data["diagnostico_validacao_2023"]
+    bands = validation["faixas_confianca"]
+
+    box(fig, 0.06, 0.40, 0.42, 0.41)
+    label(fig, 0.085, 0.77, "CONFIANÇA × ACERTO OBSERVADO", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.10, 0.49, 0.34, 0.22], facecolor=WHITE)
+    ax.set_zorder(3)
+    x = np.arange(len(bands))
+    ax.plot(x, [item["confianca_media"] for item in bands], color="#93ACB6",
+            marker="o", lw=2, label="Confiança média")
+    ax.plot(x, [item["acerto"] for item in bands], color=TEAL,
+            marker="o", lw=2, label="Acerto observado")
+    ax.set_xticks(x, [f"{int(item['inicio'] * 100)}–{int(item['fim'] * 100)}%\nn={item['jogos']}"
+                      for item in bands])
+    ax.set_ylim(0.25, 1.05)
+    ax.set_yticks([0.25, 0.50, 0.75, 1.0])
+    ax.tick_params(axis="both", labelsize=7, length=0)
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=7, loc="upper left")
+
+    box(fig, 0.52, 0.40, 0.42, 0.41)
+    label(fig, 0.55, 0.77, "ERROS COM MAIOR CONFIANÇA", size=10, color=TEAL, weight="bold")
+    for index, item in enumerate(validation["erros_maior_confianca"]):
+        y = 0.71 - index * 0.061
+        label(fig, 0.55, y, f"{index + 1:02d}", size=8, color=TEAL, weight="bold")
+        label(fig, 0.59, y, f"{item['mandante']} × {item['visitante']}", size=8, color=INK, weight="bold")
+        label(fig, 0.59, y - 0.025,
+              f"{date_br(item['data'])}  ·  {item['real']} → {item['previsto']}  ·  {percentage(item['confianca'])}",
+              size=7, color=MUTED)
+
+    box(fig, 0.06, 0.15, 0.88, 0.20, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.315, "COMO INTERPRETAR", size=10, color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.27,
+            "Entre 50% e 70% de confiança, o acerto observado ficou abaixo da confiança média. "
+            "Acima de 70% há apenas dois jogos, então a faixa é pequena demais para uma conclusão geral. "
+            "Os cinco erros destacados mostram casos para investigar; não identificam sua causa. "
+            "O teste de 2024 continua reservado como registro final desta versão.",
+            121, size=9, color=INK)
+    return fig
+
+
 def next_page(data: dict, number: int, total: int):
     fig = page("O que falta e como acompanhar", "Próxima edição", number, total)
     current = data["estado_atual"]
@@ -439,8 +664,8 @@ def next_page(data: dict, number: int, total: int):
 
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
-    history_chunks = [milestones[i : i + 6] for i in range(0, len(milestones), 6)] or [[]]
-    total_pages = 4 + len(history_chunks)
+    history_chunks = [milestones[i : i + 7] for i in range(0, len(milestones), 7)] or [[]]
+    total_pages = 6 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -448,8 +673,10 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 2, total_pages),
-            model_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 4, total_pages),
+            model_page(data, total_pages - 3, total_pages),
+            validation_page(data, total_pages - 2, total_pages),
+            confidence_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -464,6 +691,7 @@ def make_pdf(data: dict) -> None:
 def main() -> None:
     data = load_history()
     verify_local_metrics(data)
+    verify_local_diagnostics(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")

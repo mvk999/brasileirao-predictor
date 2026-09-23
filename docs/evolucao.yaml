@@ -1,7 +1,7 @@
 titulo: Brasileirão Predictor
-edicao: 1
+edicao: 2
 atualizado_em: 2026-09-23
-subtitulo: Da ideia inicial à primeira avaliação retrospectiva
+subtitulo: Da ideia inicial ao diagnóstico da primeira validação
 
 origem:
   data: 2026-07-25
@@ -43,6 +43,11 @@ marcos:
     detalhe: Regressão logística e referência simples, com validação em 2023 e teste em 2024.
     evidencia: c544fac
     fase: Modelo
+  - data: 2026-09-23
+    titulo: Erros de 2023 analisados
+    detalhe: Matriz de confusão, métricas por classe, faixas de confiança e exemplos de erros.
+    evidencia: '3066650'
+    fase: Diagnóstico
 
 dados:
   temporadas: [2020, 2021, 2022, 2023, 2024]
@@ -79,24 +84,54 @@ modelo:
     - [12, 9, 80]
     - [15, 4, 161]
 
+diagnostico_validacao_2023:
+  treino: >-
+    Os parâmetros do modelo foram treinados somente com 2020–2022. As features
+    de cada jogo de 2023 usam apenas resultados de partidas anteriores.
+  classes: [A, D, H]
+  reais: [104, 98, 178]
+  previstas: [48, 7, 325]
+  matriz_confusao:
+    - [19, 2, 83]
+    - [14, 5, 79]
+    - [15, 0, 163]
+  por_classe:
+    A: {reais: 104, previstas: 48, acertos: 19, precisao: 0.3958333333, revocacao: 0.1826923077, f1: 0.25}
+    D: {reais: 98, previstas: 7, acertos: 5, precisao: 0.7142857143, revocacao: 0.0510204082, f1: 0.0952380952}
+    H: {reais: 178, previstas: 325, acertos: 163, precisao: 0.5015384615, revocacao: 0.9157303371, f1: 0.6481113320}
+  faixas_confianca:
+    - {inicio: 0.0, fim: 0.4, jogos: 78, confianca_media: 0.3760469463, acerto: 0.3974358974}
+    - {inicio: 0.4, fim: 0.5, jogos: 172, confianca_media: 0.4482385360, acerto: 0.5232558140}
+    - {inicio: 0.5, fim: 0.6, jogos: 101, confianca_media: 0.5453401460, acerto: 0.4851485149}
+    - {inicio: 0.6, fim: 0.7, jogos: 27, confianca_media: 0.6411722057, acerto: 0.5555555556}
+    - {inicio: 0.7, fim: 1.0, jogos: 2, confianca_media: 0.7454932049, acerto: 1.0}
+  erros_maior_confianca:
+    - {id: 8283, data: 2023-10-08, mandante: Atletico-MG, visitante: Coritiba, real: A, previsto: H, confianca: 0.6757514974}
+    - {id: 8047, data: 2023-04-29, mandante: Coritiba, visitante: Sao Paulo, real: D, previsto: A, confianca: 0.6733010862}
+    - {id: 8042, data: 2023-04-23, mandante: Vasco, visitante: Palmeiras, real: D, previsto: H, confianca: 0.6711294105}
+    - {id: 8090, data: 2023-05-20, mandante: America-MG, visitante: Fortaleza, real: H, previsto: A, confianca: 0.6641986514}
+    - {id: 8041, data: 2023-04-23, mandante: Santos, visitante: Atletico-MG, real: D, previsto: H, confianca: 0.6601370241}
+
 estado_atual:
   entregue:
     - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
     - Base com 12 features históricas por partida.
     - Primeiro modelo treinado e comparado com uma referência simples.
-    - Métricas e previsões retrospectivas de 2024 geradas localmente.
+    - Diagnóstico de erros de 2023 e previsões retrospectivas de 2024 gerados localmente.
   limites:
     - O ganho de acurácia em 2024 foi pequeno, de 47,4% para 48,2%.
     - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
+    - Em 2023, reconheceu somente 5 dos 98 empates reais.
     - Ainda não há fluxo para montar features de uma partida futura.
     - A fonte processada cobre apenas até a temporada de 2024.
   proximos_passos:
-    - Investigar erros por classe, principalmente empates e vitórias do visitante.
+    - Investigar as causas da baixa revocação de empates e vitórias do visitante.
     - Comparar novas features e métodos usando novas validações temporais.
     - Atualizar a fonte de dados e gerar features para partidas não disputadas.
     - Criar uma interface somente após validar o fluxo de previsão futura.
 
 fontes:
-  - 'Histórico Git do próprio repositório: commits fee7978 a c544fac.'
+  - 'Histórico Git do próprio repositório: commits fee7978 a 3066650.'
   - 'README.md, src/data/prepare_matches.py e src/model/train_baseline.py.'
   - 'artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.'
+  - 'artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.'

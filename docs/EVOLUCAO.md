@@ -1,6 +1,6 @@
 # Evolução do Brasileirão Predictor
 
-**Edição 1 · Atualizado em 23/09/2026**
+**Edição 2 · Atualizado em 23/09/2026**
 
 Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos
 editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.
@@ -21,6 +21,7 @@ Evidência inicial: commit `fee7978` de 25/07/2026.
 | 06/09/2026 | Estado documentado | README passou a separar claramente exploração de uma previsão funcional. | `96f23d7` |
 | 23/09/2026 | Features por partida | Ordem cronológica corrigida e base com seis métricas para cada time. | `ccaabcb` |
 | 23/09/2026 | Primeiro modelo avaliado | Regressão logística e referência simples, com validação em 2023 e teste em 2024. | `c544fac` |
+| 23/09/2026 | Erros de 2023 analisados | Matriz de confusão, métricas por classe, faixas de confiança e exemplos de erros. | `3066650` |
 
 ## Estado atual dos dados
 
@@ -69,23 +70,71 @@ linhas para o resultado real e colunas para a previsão.
 | D | 12 | 9 | 80 |
 | H | 15 | 4 | 161 |
 
+## Diagnóstico dos erros na validação de 2023
+
+Os parâmetros do modelo foram treinados somente com 2020–2022. As features de cada jogo de 2023 usam apenas resultados de partidas anteriores.
+
+A matriz usa **linhas para o resultado real** e **colunas para a previsão**:
+
+| Real / Previsto | A | D | H |
+| --- | ---: | ---: | ---: |
+| A | 19 | 2 | 83 |
+| D | 14 | 5 | 79 |
+| H | 15 | 0 | 163 |
+
+| Classe | Reais | Previstos | Acertos | Precisão | Revocação | F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 104 | 48 | 19 | 39,6% | 18,3% | 0,250 |
+| D | 98 | 7 | 5 | 71,4% | 5,1% | 0,095 |
+| H | 178 | 325 | 163 | 50,2% | 91,6% | 0,648 |
+
+O modelo reconheceu **5 dos 98 empates** (5,1% de revocação), pois só escolheu D em 7 jogos. Em contraste, acertou **163 das 178 vitórias do mandante** (91,6% de revocação), mas escolheu H em 325 jogos. Isso mostra concentração das previsões em H; não demonstra, por si só, a causa do comportamento.
+
+### Confiança e acerto observado
+
+A confiança é a maior das três probabilidades previstas. Cada faixa
+compara a confiança média com a proporção de acertos nas partidas nela
+incluídas. Faixas pequenas exigem cautela na interpretação.
+
+| Confiança prevista | Jogos | Confiança média | Acerto observado |
+| --- | ---: | ---: | ---: |
+| 0,0%–40,0% | 78 | 37,6% | 39,7% |
+| 40,0%–50,0% | 172 | 44,8% | 52,3% |
+| 50,0%–60,0% | 101 | 54,5% | 48,5% |
+| 60,0%–70,0% | 27 | 64,1% | 55,6% |
+| 70,0%–100,0% | 2 | 74,5% | 100,0% |
+
+### Cinco erros com maior confiança na classe prevista
+
+Esses exemplos ajudam a inspecionar o comportamento do modelo; não
+explicam isoladamente por que ele errou.
+
+| Data | Partida | Real | Previsto | Confiança |
+| --- | --- | --- | --- | ---: |
+| 08/10/2023 | Atletico-MG × Coritiba (ID 8283) | A | H | 67,6% |
+| 29/04/2023 | Coritiba × Sao Paulo (ID 8047) | D | A | 67,3% |
+| 23/04/2023 | Vasco × Palmeiras (ID 8042) | D | H | 67,1% |
+| 20/05/2023 | America-MG × Fortaleza (ID 8090) | H | A | 66,4% |
+| 23/04/2023 | Santos × Atletico-MG (ID 8041) | D | H | 66,0% |
+
 ## O que existe hoje
 
 - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
 - Base com 12 features históricas por partida.
 - Primeiro modelo treinado e comparado com uma referência simples.
-- Métricas e previsões retrospectivas de 2024 geradas localmente.
+- Diagnóstico de erros de 2023 e previsões retrospectivas de 2024 gerados localmente.
 
 ## Limites conhecidos
 
 - O ganho de acurácia em 2024 foi pequeno, de 47,4% para 48,2%.
 - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
+- Em 2023, reconheceu somente 5 dos 98 empates reais.
 - Ainda não há fluxo para montar features de uma partida futura.
 - A fonte processada cobre apenas até a temporada de 2024.
 
 ## Próximas etapas
 
-1. Investigar erros por classe, principalmente empates e vitórias do visitante.
+1. Investigar as causas da baixa revocação de empates e vitórias do visitante.
 2. Comparar novas features e métodos usando novas validações temporais.
 3. Atualizar a fonte de dados e gerar features para partidas não disputadas.
 4. Criar uma interface somente após validar o fluxo de previsão futura.
@@ -102,6 +151,7 @@ linhas para o resultado real e colunas para a previsão.
 
 ## Fontes internas desta edição
 
-- Histórico Git do próprio repositório: commits fee7978 a c544fac.
+- Histórico Git do próprio repositório: commits fee7978 a 3066650.
 - README.md, src/data/prepare_matches.py e src/model/train_baseline.py.
 - artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.
+- artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.
