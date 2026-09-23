@@ -182,6 +182,28 @@ def verify_local_draw_experiment(data: dict) -> None:
             raise ValueError(f"Troca de erros desatualizada no limiar {row['limiar']}.")
 
 
+def verify_local_poisson_experiment(data: dict) -> None:
+    path = ROOT / "artifacts/poisson_experiment.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))
+    recorded = data["experimento_poisson"]
+    if recorded["prior_escolhido"] != measured["chosen_prior_games"]:
+        raise ValueError("Prior do Poisson difere do relatório local.")
+    for name, key in (("referencia", "logistic_baseline"), ("poisson", "poisson")):
+        actual = measured["validation_2023"][key]
+        row = recorded[name]
+        for documented, generated in (("acuracia", "accuracy"), ("f1_macro", "f1_macro"),
+                                      ("log_loss", "log_loss")):
+            if abs(row[documented] - actual[generated]) > 0.000001:
+                raise ValueError(f"Experimento Poisson desatualizado em {name}/{documented}.")
+        for label, prefix in (("D", "d"), ("H", "h"), ("A", "a")):
+            if row[f"{prefix}_corretos"] != actual["by_class"][label]["correct"]:
+                raise ValueError(f"Acertos de {label} diferem no experimento Poisson.")
+        if row["d_previstos"] != actual["by_class"]["D"]["predicted"]:
+            raise ValueError("Empates previstos diferem no experimento Poisson.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
@@ -377,7 +399,22 @@ def make_markdown(data: dict) -> str:
             f"| {row['limiar']:.2f} | {row['previstos_d']} | {row['corretos_d']} | "
             f"{row['falsos_d']} | {percentage(row['acuracia'])} |"
         )
-    lines += ["", "**Conclusão:** " + experiment["interpretacao"], "", "## O que existe hoje", ""]
+    poisson = data["experimento_poisson"]
+    lines += [
+        "", "**Conclusão:** " + experiment["interpretacao"],
+        "", "## Experimento com gols por Poisson", "", poisson["protocolo"],
+        "", poisson["metodo"], "",
+        "| Método em 2023 | Acurácia | F1 macro | Log loss | Empates corretos / previstos | H corretos / reais | A corretos / reais |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for key, name in (("referencia", "Regressão logística"), ("poisson", "Poisson independente")):
+        row = poisson[key]
+        lines.append(
+            f"| {name} | {percentage(row['acuracia'])} | {decimal(row['f1_macro'])} | "
+            f"{decimal(row['log_loss'])} | {row['d_corretos']}/{row['d_previstos']} | "
+            f"{row['h_corretos']}/178 | {row['a_corretos']}/104 |"
+        )
+    lines += ["", "**Conclusão:** " + poisson["conclusao"], "", "## O que existe hoje", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["limites"]]
@@ -759,6 +796,51 @@ def draw_experiment_page(data: dict, number: int, total: int):
     return fig
 
 
+def poisson_page(data: dict, number: int, total: int):
+    fig = page("Poisson: probabilidade e decisão", "Modelo de gols", number, total)
+    experiment = data["experimento_poisson"]
+    baseline = experiment["referencia"]
+    poisson = experiment["poisson"]
+    box(fig, 0.06, 0.43, 0.42, 0.38)
+    label(fig, 0.085, 0.77, "PROBABILIDADES E RESULTADOS", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.12, 0.51, 0.31, 0.21], facecolor=WHITE)
+    ax.set_zorder(3)
+    values = [baseline["acuracia"], poisson["acuracia"], baseline["f1_macro"], poisson["f1_macro"]]
+    x = np.arange(2)
+    ax.bar(x - 0.16, [values[0], values[2]], 0.29, color="#B5C7CF", label="Regressão")
+    ax.bar(x + 0.16, [values[1], values[3]], 0.29, color=TEAL, label="Poisson")
+    ax.set_xticks(x, ["Acurácia", "F1 macro"])
+    ax.set_ylim(0, 0.6)
+    ax.set_yticks([0, 0.2, 0.4, 0.6])
+    ax.tick_params(labelsize=8, length=0)
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=7)
+    label(fig, 0.10, 0.46, "Log loss: 1,057 → 1,033 (menor é melhor)", size=8, color=MUTED)
+
+    box(fig, 0.52, 0.43, 0.42, 0.38)
+    label(fig, 0.55, 0.77, "ACERTOS POR RESULTADO", size=10, color=TEAL, weight="bold")
+    for i, (title, key, total_count) in enumerate((("Empate", "d", 98),
+                                                     ("Mandante", "h", 178),
+                                                     ("Visitante", "a", 104))):
+        y = 0.67 - i * 0.105
+        label(fig, 0.55, y, title, size=10, color=INK, weight="bold")
+        label(fig, 0.76, y, f"{baseline[f'{key}_corretos']}/{total_count}", size=10, color=MUTED)
+        label(fig, 0.88, y, f"{poisson[f'{key}_corretos']}/{total_count}", size=10, color=TEAL)
+    label(fig, 0.75, 0.72, "Regressão", size=8, color=MUTED)
+    label(fig, 0.87, 0.72, "Poisson", size=8, color=MUTED)
+
+    box(fig, 0.06, 0.15, 0.88, 0.23, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.34, "LEITURA DO EXPERIMENTO", size=10, color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.29,
+            "Ataque, defesa e mando geram taxas de gols; delas saem probabilidades para H, D e A. "
+            "Em 2023 o Poisson teve log loss menor, mas a regra de maior probabilidade não escolheu "
+            "nenhum empate. Não há evidência de melhora simultânea em empate, mandante e visitante. "
+            "A correção de Dixon-Coles ainda não foi implementada; 2024 não entrou no experimento.",
+            119, size=9, color=INK)
+    return fig
+
+
 def next_page(data: dict, number: int, total: int):
     fig = page("O que falta e como acompanhar", "Próxima edição", number, total)
     current = data["estado_atual"]
@@ -789,8 +871,8 @@ def next_page(data: dict, number: int, total: int):
 
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
-    history_chunks = [milestones[i : i + 4] for i in range(0, len(milestones), 4)] or [[]]
-    total_pages = 7 + len(history_chunks)
+    history_chunks = [milestones[i : i + 5] for i in range(0, len(milestones), 5)] or [[]]
+    total_pages = 8 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -798,11 +880,12 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 5, total_pages),
-            model_page(data, total_pages - 4, total_pages),
-            validation_page(data, total_pages - 3, total_pages),
-            confidence_page(data, total_pages - 2, total_pages),
-            draw_experiment_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 6, total_pages),
+            model_page(data, total_pages - 5, total_pages),
+            validation_page(data, total_pages - 4, total_pages),
+            confidence_page(data, total_pages - 3, total_pages),
+            draw_experiment_page(data, total_pages - 2, total_pages),
+            poisson_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -819,6 +902,7 @@ def main() -> None:
     verify_local_metrics(data)
     verify_local_diagnostics(data)
     verify_local_draw_experiment(data)
+    verify_local_poisson_experiment(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")

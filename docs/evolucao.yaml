@@ -1,7 +1,7 @@
 titulo: Brasileirão Predictor
-edicao: 3
+edicao: 4
 atualizado_em: 2026-09-23
-subtitulo: Da ideia inicial ao experimento com empates
+subtitulo: Da ideia inicial aos experimentos de validação
 
 origem:
   data: 2026-07-25
@@ -52,6 +52,11 @@ marcos:
     titulo: Experimento com empates
     detalhe: Limites de decisão e três sinais de equilíbrio comparados com validação temporal.
     evidencia: experiment_draws.py
+    fase: Experimento
+  - data: 2026-09-23
+    titulo: Modelo de gols por Poisson
+    detalhe: Forças de ataque e defesa estimadas sem olhar jogos futuros; comparação com o modelo de classes.
+    evidencia: experiment_poisson.py
     fase: Experimento
 
 dados:
@@ -141,6 +146,27 @@ experimento_empates:
     - {limiar: 0.30, previstos_d: 126, corretos_d: 36, falsos_d: 90, acuracia: 0.4315789474}
     - {limiar: 0.35, previstos_d: 21, corretos_d: 10, falsos_d: 11, acuracia: 0.4973684211}
 
+experimento_poisson:
+  protocolo: >-
+    Para cada jogo, são usados somente resultados com data anterior. Ataque
+    e vulnerabilidade defensiva de cada clube usam gols marcados/sofridos
+    em relação à média da liga; dados de temporadas mais antigas recebem
+    peso menor. A intensidade de encolhimento foi escolhida em 2022 pelo
+    menor log loss; 2023 foi usado para comparação. 2024 não foi usado.
+  metodo: >-
+    Poisson independente para gols da casa e de fora, com vantagem de mando
+    embutida nas médias de gols da liga. A distribuição Skellam fornece as
+    probabilidades de A, D e H. Não foi aplicada a correção de Dixon-Coles.
+  prior_escolhido: 5
+  referencia: {acuracia: 0.4921052632, f1_macro: 0.3311164757, log_loss: 1.0568007836, d_corretos: 5, d_previstos: 7, h_corretos: 163, a_corretos: 19}
+  poisson: {acuracia: 0.4684210526, f1_macro: 0.3108974359, log_loss: 1.0326129501, d_corretos: 0, d_previstos: 0, h_corretos: 150, a_corretos: 28}
+  conclusao: >-
+    A probabilidade média de empate do Poisson em 2023 ficou próxima da
+    frequência real, mas empate nunca foi a classe mais provável. O log loss
+    melhorou; acurácia, F1 macro e acertos de mandante pioraram. O modelo
+    principal não foi substituído. A melhoria de empate sem perda de H e A
+    ainda não foi demonstrada.
+
 estado_atual:
   entregue:
     - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -153,10 +179,11 @@ estado_atual:
     - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
     - Em 2023, reconheceu somente 5 dos 98 empates reais.
     - O melhor resultado exploratório para empates ainda precisa de validação em dados novos.
+    - O Poisson independente não previu nenhum empate pela regra de maior probabilidade em 2023.
     - Ainda não há fluxo para montar features de uma partida futura.
     - A fonte processada cobre apenas até a temporada de 2024.
   proximos_passos:
-    - Comparar sinais de equilíbrio e métodos em novas validações temporais.
+    - Investigar calibração e correção de placares baixos com novas validações temporais.
     - Reunir uma temporada nova para confirmar se a melhora em empates se repete.
     - Atualizar a fonte de dados e gerar features para partidas não disputadas.
     - Criar uma interface somente após validar o fluxo de previsão futura.
@@ -167,3 +194,4 @@ fontes:
   - 'artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.'
   - 'artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.'
   - 'src/model/experiment_draws.py e artifacts/draw_experiment.json, gerado localmente.'
+  - 'src/model/experiment_poisson.py e artifacts/poisson_experiment.json, gerado localmente.'

@@ -1,6 +1,6 @@
 # Evolução do Brasileirão Predictor
 
-**Edição 3 · Atualizado em 23/09/2026**
+**Edição 4 · Atualizado em 23/09/2026**
 
 Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos
 editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.
@@ -23,6 +23,7 @@ Evidência inicial: commit `fee7978` de 25/07/2026.
 | 23/09/2026 | Primeiro modelo avaliado | Regressão logística e referência simples, com validação em 2023 e teste em 2024. | `c544fac` |
 | 23/09/2026 | Erros de 2023 analisados | Matriz de confusão, métricas por classe, faixas de confiança e exemplos de erros. | `3066650` |
 | 23/09/2026 | Experimento com empates | Limites de decisão e três sinais de equilíbrio comparados com validação temporal. | `experiment_draws.py` |
+| 23/09/2026 | Modelo de gols por Poisson | Forças de ataque e defesa estimadas sem olhar jogos futuros; comparação com o modelo de classes. | `experiment_poisson.py` |
 
 ## Estado atual dos dados
 
@@ -147,6 +148,19 @@ Os limites abaixo são apenas ilustrativos em 2023, com o modelo de 12 features.
 
 **Conclusão:** O limite de 0,35 da referência elevou o F1 macro de 0,331 para 0,357, com 10 dos 98 empates reconhecidos. As features adicionais com limite de 0,34 elevaram o F1 macro a 0,370 e reconheceram 18 empates, mas a acurácia ficou em 0,489 ante 0,492 da referência. O ganho é exploratório: uma única temporada de validação e 2023 já havia sido inspecionada. O modelo usado pelo projeto não foi substituído.
 
+## Experimento com gols por Poisson
+
+Para cada jogo, são usados somente resultados com data anterior. Ataque e vulnerabilidade defensiva de cada clube usam gols marcados/sofridos em relação à média da liga; dados de temporadas mais antigas recebem peso menor. A intensidade de encolhimento foi escolhida em 2022 pelo menor log loss; 2023 foi usado para comparação. 2024 não foi usado.
+
+Poisson independente para gols da casa e de fora, com vantagem de mando embutida nas médias de gols da liga. A distribuição Skellam fornece as probabilidades de A, D e H. Não foi aplicada a correção de Dixon-Coles.
+
+| Método em 2023 | Acurácia | F1 macro | Log loss | Empates corretos / previstos | H corretos / reais | A corretos / reais |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Regressão logística | 49,2% | 0,331 | 1,057 | 5/7 | 163/178 | 19/104 |
+| Poisson independente | 46,8% | 0,311 | 1,033 | 0/0 | 150/178 | 28/104 |
+
+**Conclusão:** A probabilidade média de empate do Poisson em 2023 ficou próxima da frequência real, mas empate nunca foi a classe mais provável. O log loss melhorou; acurácia, F1 macro e acertos de mandante pioraram. O modelo principal não foi substituído. A melhoria de empate sem perda de H e A ainda não foi demonstrada.
+
 ## O que existe hoje
 
 - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -161,12 +175,13 @@ Os limites abaixo são apenas ilustrativos em 2023, com o modelo de 12 features.
 - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
 - Em 2023, reconheceu somente 5 dos 98 empates reais.
 - O melhor resultado exploratório para empates ainda precisa de validação em dados novos.
+- O Poisson independente não previu nenhum empate pela regra de maior probabilidade em 2023.
 - Ainda não há fluxo para montar features de uma partida futura.
 - A fonte processada cobre apenas até a temporada de 2024.
 
 ## Próximas etapas
 
-1. Comparar sinais de equilíbrio e métodos em novas validações temporais.
+1. Investigar calibração e correção de placares baixos com novas validações temporais.
 2. Reunir uma temporada nova para confirmar se a melhora em empates se repete.
 3. Atualizar a fonte de dados e gerar features para partidas não disputadas.
 4. Criar uma interface somente após validar o fluxo de previsão futura.
@@ -188,3 +203,4 @@ Os limites abaixo são apenas ilustrativos em 2023, com o modelo de 12 features.
 - artifacts/logistic_baseline_metrics.json e data/processed/predictions_2024.csv, gerados localmente.
 - artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.
 - src/model/experiment_draws.py e artifacts/draw_experiment.json, gerado localmente.
+- src/model/experiment_poisson.py e artifacts/poisson_experiment.json, gerado localmente.
