@@ -3,7 +3,8 @@
 Projeto de ciência de dados para preparar e explorar partidas históricas do
 Campeonato Brasileiro. Nesta fase, o repositório transforma um CSV público em
 uma base padronizada das temporadas de 2020 a 2024 e documenta análises e
-features candidatas em notebooks.
+features candidatas em notebooks. O segundo notebook também gera uma base de
+features por partida para as próximas etapas.
 
 > **Estado atual:** o projeto ainda não treina um modelo nem disponibiliza uma
 > interface ou comando para prever partidas. Portanto, ele não gera previsões
@@ -16,9 +17,9 @@ features candidatas em notebooks.
 - Correção da atribuição da temporada 2020, concluída em janeiro e fevereiro
   de 2021 devido à pandemia.
 - Notebook de entendimento dos dados e estatísticas descritivas.
-- Notebook exploratório de engenharia de features de forma recente, gols e
-  desempenho por mando de campo.
-- Testes automatizados para as regras centrais de preparação dos dados.
+- Notebook de engenharia de features de forma recente, gols e desempenho por
+  mando de campo, com uma linha por partida e histórico em ordem cronológica.
+- Testes automatizados para a preparação dos dados e a ordem das features.
 
 ## Fluxo de dados
 
@@ -31,8 +32,12 @@ src/data/prepare_matches.py
         v
 data/processed/matches_2020_2024.csv
         |
-        +--> notebooks/01_data_understanding.ipynb
         +--> notebooks/02_feature_engineering.ipynb
+                    |
+                    v
+             data/processed/matches_features_2020_2024.csv
+
+CSV histórico público --> notebooks/01_data_understanding.ipynb
 ```
 
 O pipeline espera o arquivo bruto em
@@ -123,8 +128,8 @@ com 10 jogos cada.
 python -m pytest
 ```
 
-Os testes verificam o cálculo do resultado, a exceção da temporada 2020 e as
-propriedades esperadas da base processada.
+Os testes verificam o cálculo do resultado, a exceção da temporada 2020, as
+propriedades da base processada e a ordem dos jogos usados nas features.
 
 ### 4. Abra os notebooks
 
@@ -136,9 +141,17 @@ Execute as células na ordem em que aparecem:
 
 - `notebooks/01_data_understanding.ipynb` explora a base, sua cobertura e
   estatísticas de partidas e da tabela de 2024.
-- `notebooks/02_feature_engineering.ipynb` constrói, em memória, o histórico
-  dos clubes e métricas de últimos cinco jogos, inclusive recortes por mando.
-  Ele depende do CSV processado e não grava uma base de features no disco.
+- `notebooks/02_feature_engineering.ipynb` constrói o histórico dos clubes em
+  ordem cronológica, calcula métricas dos cinco jogos anteriores (gerais e por
+  mando), reúne mandante e visitante pelo ID da partida e grava
+  `data/processed/matches_features_2020_2024.csv`.
+
+A base gerada deve ter 1.900 linhas e 19 colunas: sete identificadores e alvo
+(`resultado`), mais seis features para cada time. As médias ficam vazias quando
+o clube ainda não tem jogos anteriores naquela temporada ou naquele mando;
+isso é esperado e precisa ser tratado na etapa de modelagem. O notebook imprime
+`Histórico geral em ordem cronológica conferido.` e `Partidas: 1900 | Features: 12`
+ao executar todas as células sem erro.
 
 ## Estrutura do repositório
 
@@ -162,10 +175,10 @@ repositório.
 ## Limitações e próximos passos
 
 Este repositório é a fundação de dados de um preditor, não o produto final. As
-etapas que ainda faltam incluem consolidar uma base de features reutilizável,
-treinar e avaliar modelos, versionar artefatos e expor previsões por uma API ou
-interface. As métricas dos notebooks são exploratórias e não constituem, por si
-só, previsões ou recomendação de aposta.
+etapas que ainda faltam incluem definir o tratamento dos valores ausentes,
+treinar e avaliar modelos com separação temporal, versionar artefatos e expor
+previsões por uma API ou interface. As métricas dos notebooks são exploratórias
+e não constituem, por si só, previsões ou recomendação de aposta.
 
 ## Solução de problemas
 
