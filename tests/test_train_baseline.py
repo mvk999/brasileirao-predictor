@@ -3,7 +3,12 @@
 import numpy as np
 import pandas as pd
 
-from src.model.train_baseline import FEATURE_COLUMNS, make_model, split_by_season
+from src.model.train_baseline import (
+    FEATURE_COLUMNS,
+    make_model,
+    split_by_season,
+    validation_diagnostics,
+)
 
 
 def test_split_keeps_2024_only_for_final_evaluation() -> None:
@@ -36,3 +41,29 @@ def test_imputer_is_fitted_on_training_values_only() -> None:
 
     learned_medians = model.named_steps["simpleimputer"].statistics_
     np.testing.assert_array_equal(learned_medians, np.full(len(FEATURE_COLUMNS), 3.0))
+
+
+def test_validation_diagnostics_counts_each_real_and_predicted_class() -> None:
+    predictions = pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "data": ["2023-01-01"] * 6,
+            "mandante": ["Casa"] * 6,
+            "visitante": ["Fora"] * 6,
+            "resultado": ["A", "D", "H", "A", "D", "H"],
+            "previsto": ["H", "D", "H", "A", "H", "A"],
+            "prob_A": [0.1, 0.2, 0.1, 0.4, 0.2, 0.7],
+            "prob_D": [0.2, 0.6, 0.1, 0.3, 0.2, 0.1],
+            "prob_H": [0.7, 0.2, 0.8, 0.3, 0.6, 0.2],
+        }
+    )
+
+    report = validation_diagnostics(predictions)
+
+    assert report["confusion_matrix"] == [[1, 0, 1], [0, 1, 1], [1, 0, 1]]
+    assert report["by_class"]["D"]["actual"] == 2
+    assert report["by_class"]["D"]["predicted"] == 1
+    assert report["by_class"]["D"]["correct"] == 1
+    assert report["by_class"]["D"]["recall"] == 0.5
+    assert sum(band["matches"] for band in report["confidence_bands"]) == 6
+    assert [item["id"] for item in report["most_confident_errors"]] == [1, 6, 5]

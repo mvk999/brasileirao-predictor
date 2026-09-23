@@ -207,6 +207,21 @@ métricas em `artifacts/logistic_baseline_metrics.json` e as 380 previsões
 retrospectivas em `data/processed/predictions_2024.csv`. Esses arquivos são
 gerados localmente e ignorados pelo Git.
 
+### 6. Entenda os erros da validação de 2023
+
+O mesmo comando também salva `data/processed/predictions_2023_validation.csv`
+e `artifacts/validation_2023_diagnostics.json`. Essas previsões são feitas pelo
+modelo treinado **somente com 2020--2022**. O JSON traz a matriz de confusão,
+precisão, revocação e F1 por resultado, faixas de confiança e cinco exemplos
+dos erros com maior probabilidade atribuída à classe prevista.
+
+Na base usada nesta edição, houve 98 empates reais em 2023. O modelo previu
+empate em apenas 7 jogos e acertou 5 deles: revocação de 5,1% para empates.
+Ele previu vitória do mandante em 325 de 380 jogos. As faixas de confiança
+mostram acerto observado em grupos de tamanhos diferentes; são um diagnóstico
+descritivo, não uma garantia de calibração. A análise completa, com tabelas e
+gráficos, está no [histórico do projeto](docs/EVOLUCAO.md).
+
 ## Estrutura do repositório
 
 ```text
@@ -231,10 +246,11 @@ repositório.
 ## Limitações e próximos passos
 
 Este repositório contém uma primeira avaliação retrospectiva, não um produto
-final. As próximas etapas incluem entender os erros por classe, melhorar as
-features e a avaliação sem ajustar o modelo ao teste de 2024, atualizar os dados
-para temporadas posteriores e criar um fluxo que gere features para jogos ainda
-não disputados. Só depois faz sentido expor previsões por uma API ou interface.
+final. As próximas etapas incluem investigar as causas dos erros por classe,
+melhorar as features e a avaliação sem ajustar o modelo ao teste de 2024,
+atualizar os dados para temporadas posteriores e criar um fluxo que gere
+features para jogos ainda não disputados. Só depois faz sentido expor previsões
+por uma API ou interface.
 Os resultados atuais não constituem recomendação de aposta.
 
 ## Solução de problemas

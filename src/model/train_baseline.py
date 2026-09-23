@@ -10,7 +10,13 @@ import pandas as pd
 from sklearn.dummy import DummyClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, log_loss
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    log_loss,
+    precision_recall_fscore_support,
+)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -21,6 +27,8 @@ ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 MODEL_PATH = ARTIFACTS_DIR / "logistic_baseline_2020_2023.joblib"
 METRICS_PATH = ARTIFACTS_DIR / "logistic_baseline_metrics.json"
 PREDICTIONS_PATH = PROJECT_ROOT / "data/processed/predictions_2024.csv"
+VALIDATION_PREDICTIONS_PATH = PROJECT_ROOT / "data/processed/predictions_2023_validation.csv"
+VALIDATION_DIAGNOSTICS_PATH = ARTIFACTS_DIR / "validation_2023_diagnostics.json"
 
 FEATURE_NAMES = (
     "pontos_por_jogo_ultimos_5",
@@ -104,6 +112,84 @@ def print_metrics(label: str, metrics: dict[str, float]) -> None:
     )
 
 
+def prediction_table(model, matches: pd.DataFrame) -> pd.DataFrame:
+    """Relaciona cada previsão e probabilidade à partida correspondente."""
+    features = matches.loc[:, FEATURE_COLUMNS]
+    probabilities = pd.DataFrame(
+        model.predict_proba(features),
+        columns=[f"prob_{label}" for label in model.classes_],
+        index=matches.index,
+    )
+    predictions = matches[["id", "data", "mandante", "visitante", "resultado"]].copy()
+    predictions["previsto"] = model.predict(features)
+    return predictions.join(probabilities)
+
+
+def validation_diagnostics(predictions: pd.DataFrame) -> dict:
+    """Descreve erros de 2023 sem usar esse conjunto para treinar o modelo."""
+    actual = predictions["resultado"]
+    predicted = predictions["previsto"]
+    matrix = confusion_matrix(actual, predicted, labels=CLASSES)
+    precision, recall, f1, support = precision_recall_fscore_support(
+        actual, predicted, labels=CLASSES, zero_division=0
+    )
+    by_class = {
+        label: {
+            "actual": int(support[index]),
+            "predicted": int((predicted == label).sum()),
+            "correct": int(matrix[index, index]),
+            "precision": float(precision[index]),
+            "recall": float(recall[index]),
+            "f1": float(f1[index]),
+        }
+        for index, label in enumerate(CLASSES)
+    }
+
+    confidence = predictions[[f"prob_{label}" for label in CLASSES]].max(axis=1)
+    correct = actual.eq(predicted)
+    bands = []
+    edges = (0.0, 0.4, 0.5, 0.6, 0.7, 1.0)
+    for low, high in zip(edges, edges[1:]):
+        selected = confidence.ge(low) & (
+            confidence.le(high) if high == 1.0 else confidence.lt(high)
+        )
+        count = int(selected.sum())
+        bands.append(
+            {
+                "from": low,
+                "to": high,
+                "matches": count,
+                "mean_confidence": float(confidence[selected].mean()) if count else None,
+                "accuracy": float(correct[selected].mean()) if count else None,
+            }
+        )
+
+    mistakes = predictions.loc[~correct].copy()
+    mistakes["confidence"] = confidence[~correct]
+    mistakes = mistakes.sort_values(["confidence", "id"], ascending=[False, True]).head(5)
+    examples = [
+        {
+            "id": int(row.id),
+            "date": str(row.data),
+            "home": row.mandante,
+            "away": row.visitante,
+            "actual": row.resultado,
+            "predicted": row.previsto,
+            "confidence": float(row.confidence),
+        }
+        for row in mistakes.itertuples()
+    ]
+    return {
+        "season": 2023,
+        "training_seasons": [2020, 2021, 2022],
+        "classes": list(CLASSES),
+        "confusion_matrix": matrix.tolist(),
+        "by_class": by_class,
+        "confidence_bands": bands,
+        "most_confident_errors": examples,
+    }
+
+
 def main() -> None:
     matches = load_feature_table()
     train, validation, test = split_by_season(matches)
@@ -122,6 +208,16 @@ def main() -> None:
     }
     print_metrics("Validação 2023 | Referência", validation_metrics["reference"])
     print_metrics("Validação 2023 | Regressão logística", validation_metrics["logistic_regression"])
+
+    validation_predictions = prediction_table(model, validation)
+    validation_predictions.to_csv(VALIDATION_PREDICTIONS_PATH, index=False)
+    diagnostics = validation_diagnostics(validation_predictions)
+    draws = diagnostics["by_class"]["D"]
+    print(
+        "Validação 2023 | Empates: "
+        f"{draws['correct']}/{draws['actual']} reconhecidos; "
+        f"{draws['predicted']} previsões de empate."
+    )
 
     # Com o método fixado, 2023 pode entrar no treino antes do teste final.
     development = pd.concat([train, validation], ignore_index=True)
@@ -150,18 +246,16 @@ def main() -> None:
         "test": test_metrics,
     }
     METRICS_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-
-    probabilities = pd.DataFrame(
-        final_model.predict_proba(test.loc[:, FEATURE_COLUMNS]),
-        columns=[f"prob_{label}" for label in final_model.classes_],
-        index=test.index,
+    VALIDATION_DIAGNOSTICS_PATH.write_text(
+        json.dumps(diagnostics, ensure_ascii=False, indent=2) + "\n"
     )
-    predictions = test[["id", "data", "mandante", "visitante", "resultado"]].copy()
-    predictions["previsto"] = final_model.predict(test.loc[:, FEATURE_COLUMNS])
-    predictions = predictions.join(probabilities)
+
+    predictions = prediction_table(final_model, test)
     predictions.to_csv(PREDICTIONS_PATH, index=False)
     print(f"Modelo salvo em: {MODEL_PATH}")
     print(f"Métricas salvas em: {METRICS_PATH}")
+    print(f"Diagnóstico de 2023 salvo em: {VALIDATION_DIAGNOSTICS_PATH}")
+    print(f"Previsões de validação salvas em: {VALIDATION_PREDICTIONS_PATH}")
     print(f"Previsões retrospectivas salvas em: {PREDICTIONS_PATH}")
 
 
