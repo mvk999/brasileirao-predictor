@@ -1,14 +1,12 @@
 # Brasileirão Predictor
 
 Projeto de ciência de dados para preparar e explorar partidas históricas do
-Campeonato Brasileiro. Nesta fase, o repositório transforma um CSV público em
-uma base padronizada das temporadas de 2020 a 2024 e documenta análises e
-features candidatas em notebooks. O segundo notebook também gera uma base de
-features por partida para as próximas etapas.
+Campeonato Brasileiro. O repositório transforma um CSV público em uma base
+padronizada das temporadas de 2020 a 2024, gera features históricas e treina
+uma primeira referência de classificação de resultados.
 
-> **Estado atual:** o projeto ainda não treina um modelo nem disponibiliza uma
-> interface ou comando para prever partidas. Portanto, ele não gera previsões
-> por enquanto.
+> **Estado atual:** há avaliação retrospectiva e um modelo salvo localmente.
+> Ainda não existe uma interface para informar um jogo futuro e obter previsão.
 
 ## O que já existe
 
@@ -19,7 +17,9 @@ features por partida para as próximas etapas.
 - Notebook de entendimento dos dados e estatísticas descritivas.
 - Notebook de engenharia de features de forma recente, gols e desempenho por
   mando de campo, com uma linha por partida e histórico em ordem cronológica.
-- Testes automatizados para a preparação dos dados e a ordem das features.
+- Treino de uma regressão logística e comparação com uma referência que sempre
+  prevê a classe mais frequente.
+- Testes automatizados para preparação, ordem das features e separação temporal.
 
 ## Fluxo de dados
 
@@ -36,6 +36,12 @@ data/processed/matches_2020_2024.csv
                     |
                     v
              data/processed/matches_features_2020_2024.csv
+                    |
+                    v
+             src/model/train_baseline.py
+                    |
+                    +--> artifacts/ (modelo e métricas locais)
+                    +--> data/processed/predictions_2024.csv
 
 CSV histórico público --> notebooks/01_data_understanding.ipynb
 ```
@@ -129,7 +135,8 @@ python -m pytest
 ```
 
 Os testes verificam o cálculo do resultado, a exceção da temporada 2020, as
-propriedades da base processada e a ordem dos jogos usados nas features.
+propriedades da base processada, a ordem dos jogos usados nas features e a
+separação temporal do treino.
 
 ### 4. Abra os notebooks
 
@@ -153,10 +160,53 @@ isso é esperado e precisa ser tratado na etapa de modelagem. O notebook imprime
 `Histórico geral em ordem cronológica conferido.` e `Partidas: 1900 | Features: 12`
 ao executar todas as células sem erro.
 
+### 5. Treine e avalie a primeira referência
+
+Depois de gerar a base de features no notebook, execute na raiz do projeto:
+
+```bash
+python src/model/train_baseline.py
+```
+
+O script usa apenas as 12 métricas históricas como entrada. `resultado` é a
+resposta que o modelo aprende a estimar; ID, data, rodada e nomes dos clubes
+servem para identificar partidas, mas não entram no modelo. A divisão é feita
+por temporada: 2020--2022 para treino (1.140 jogos), 2023 para validação (380)
+e 2024 para teste final (380). Depois da validação, o modelo é treinado de novo
+com 2020--2023 e avaliado uma vez em 2024.
+
+O tratamento dos valores ausentes aprende a mediana **somente nos dados usados
+no treino**. Um indicador informa ao modelo quais médias estavam ausentes, e
+as colunas são padronizadas antes da regressão logística. A referência
+`DummyClassifier(strategy="prior")` sempre escolhe a classe mais frequente e
+usa as frequências observadas no treino como probabilidades.
+
+O comando mostra três métricas para 2023 e 2024: acurácia (fração de acertos),
+F1 macro (média do F1 das três classes) e log loss (qualidade das
+probabilidades; menor é melhor). Na base local usada neste projeto, o teste de
+2024 produziu aproximadamente:
+
+| Método | Acurácia | F1 macro | Log loss |
+| --- | ---: | ---: | ---: |
+| Referência | 0,474 | 0,214 | 1,057 |
+| Regressão logística | 0,482 | 0,327 | 1,035 |
+
+Esses números descrevem apenas essa avaliação histórica. Em 2024, o modelo
+previu 323 vitórias do mandante entre 380 jogos; ainda tem dificuldade para
+reconhecer empates e vitórias do visitante. As features de cada jogo de 2024
+podem usar **resultados de jogos anteriores de 2024**, como aconteceria numa
+previsão feita rodada a rodada; o modelo não usa o resultado do jogo avaliado.
+
+O script grava `artifacts/logistic_baseline_2020_2023.joblib`, um JSON com as
+métricas em `artifacts/logistic_baseline_metrics.json` e as 380 previsões
+retrospectivas em `data/processed/predictions_2024.csv`. Esses arquivos são
+gerados localmente e ignorados pelo Git.
+
 ## Estrutura do repositório
 
 ```text
 src/data/prepare_matches.py    Pipeline e validações da base de partidas
+src/model/train_baseline.py     Treino e avaliação temporal do primeiro modelo
 tests/                         Testes do pipeline
 notebooks/                     Exploração e engenharia de features
 data/raw/                      CSV baixado localmente (não versionado)
@@ -166,19 +216,20 @@ data/processed/                CSV gerado pelo pipeline (não versionado)
 
 ## Configuração e segurança
 
-Nenhuma variável de ambiente é necessária para executar o pipeline, os testes
-ou os notebooks atuais. O arquivo `.env.example` é apenas uma referência para
-possíveis integrações futuras (banco de dados, API de futebol e LLM). Caso crie
-um `.env`, mantenha segredos fora do Git: esse arquivo já é ignorado pelo
+Nenhuma variável de ambiente é necessária para executar o pipeline, os testes,
+os notebooks ou o treino atual. O arquivo `.env.example` é apenas uma referência
+para possíveis integrações futuras (banco de dados, API de futebol e LLM). Caso
+crie um `.env`, mantenha segredos fora do Git: esse arquivo já é ignorado pelo
 repositório.
 
 ## Limitações e próximos passos
 
-Este repositório é a fundação de dados de um preditor, não o produto final. As
-etapas que ainda faltam incluem definir o tratamento dos valores ausentes,
-treinar e avaliar modelos com separação temporal, versionar artefatos e expor
-previsões por uma API ou interface. As métricas dos notebooks são exploratórias
-e não constituem, por si só, previsões ou recomendação de aposta.
+Este repositório contém uma primeira avaliação retrospectiva, não um produto
+final. As próximas etapas incluem entender os erros por classe, melhorar as
+features e a avaliação sem ajustar o modelo ao teste de 2024, atualizar os dados
+para temporadas posteriores e criar um fluxo que gere features para jogos ainda
+não disputados. Só depois faz sentido expor previsões por uma API ou interface.
+Os resultados atuais não constituem recomendação de aposta.
 
 ## Solução de problemas
 
