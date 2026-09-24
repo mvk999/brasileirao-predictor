@@ -43,6 +43,22 @@ Também foi avaliado um modelo de **gols por Poisson independente**. Ele estima 
 
 Uma nova regra experimental escolhe empate quando as **taxas de gols estimadas** dos times diferem em até 0,20 gol e limita as escolhas a cinco por rodada. O limite foi escolhido em 2022. Em 2023, encontrou **30 empates em 101 previsões de empate**, mas os acertos de `H` caíram de 150 para 126 e os de `A` de 28 para 17, na comparação com o Poisson sem a regra. A acurácia caiu de 46,8% para 45,5%. A regra não entrou no modelo principal; veja [`experiment_round_draws.py`](src/model/experiment_round_draws.py).
 
+### Experimento Dixon-Coles com validação walk-forward
+
+Foi implementada uma comparação incremental: **A**, Poisson independente; **B**, o mesmo modelo com correção `τ` para placares 0–0, 0–1, 1–0 e 1–1; **C**, Dixon-Coles com peso exponencial por idade da partida. Os modelos estimam ataques, defesas e vantagem de mando por máxima verossimilhança. Em C, a meia-vida é escolhida em validação temporal interna do treino de cada fold.
+
+O walk-forward usa **14 temporadas e 5.320 partidas fora da amostra**, de 2010–2015 e 2017–2024. A acurácia, F1 macro, log loss e Brier abaixo são médias ± desvio padrão entre temporadas. A correção B quase não alterou A. C elevou o F1 macro médio para **0,287**, ante **0,253** em A e B, principalmente por aumentar a revocação de vitórias visitantes; ainda acertou somente **2 de 1.458 empates reais**. Log loss e Brier quase não mudaram. Portanto, esses resultados não mostram melhora consistente na previsão de empates.
+
+| Variante | Acurácia | F1 macro | Log loss | Brier |
+| --- | ---: | ---: | ---: | ---: |
+| A · Poisson | 0,479 ± 0,032 | 0,253 ± 0,021 | 1,038 ± 0,024 | 0,624 ± 0,017 |
+| B · Poisson + Dixon-Coles | 0,479 ± 0,033 | 0,253 ± 0,021 | 1,037 ± 0,024 | 0,624 ± 0,017 |
+| C · Dixon-Coles + decaimento | 0,480 ± 0,027 | 0,287 ± 0,031 | 1,038 ± 0,027 | 0,624 ± 0,018 |
+
+O gráfico compara confiança prevista e taxa de acerto por faixa, agregando previsões fora da amostra dos folds. As matrizes de confusão e métricas de cada classe estão no histórico detalhado e no JSON local produzido pelo experimento.
+
+![Confiança prevista e acerto observado para as três variantes](docs/assets/dixon-coles-confidence.png)
+
 ### Experimento com histórico longo
 
 Para investigar se aprender com mais anos ajuda, a mesma regressão foi ajustada antes de cada temporada com as **3, 5, 10 temporadas completas mais recentes** ou com **todas as temporadas anteriores disponíveis**. No teste temporal de 2018–2022, a média do F1 macro foi **0,293** com 3 temporadas e **0,237** com todas. O log loss médio foi **1,049** e **1,039**, respectivamente: mais histórico melhorou um pouco as probabilidades, mas piorou as decisões por classe.
@@ -95,7 +111,9 @@ Os dados brutos e processados ficam em `data/raw/` e `data/processed/`, ignorado
 
 **Separação temporal.** O treino inicial usa 2020–2022; 2023 serve para validação. Depois, o modelo é ajustado novamente com 2020–2023 e avaliado retrospectivamente em 2024. Para cada partida avaliada, os atributos usam apenas jogos anteriores da mesma temporada. O teste de 2024 já foi examinado neste projeto e não deve ser tratado como um conjunto inteiramente novo para futuras escolhas de modelo.
 
-**Experimentos.** O limite de empate é escolhido em 2022 e comparado em 2023. O modelo de gols segue a ideia de forças de ataque e defesa estudada por [Maher (1982)](https://doi.org/10.1111/j.1467-9574.1982.tb00782.x): usa resultados anteriores à data de cada partida, escolhe a intensidade de regularização em 2022 e compara seu desempenho em 2023. Sua versão atual usa Poissons independentes; ela não implementa a correção de placares baixos de [Dixon e Coles (1997)](https://doi.org/10.1111/1467-9876.00065). Nenhum desses experimentos substitui o modelo principal ou constitui previsão de uma partida futura.
+**Experimentos de gols.** [`experiment_poisson.py`](src/model/experiment_poisson.py) usa Poissons independentes e tem uma avaliação retrospectiva própria. O novo [`experiment_dixon_coles.py`](src/model/experiment_dixon_coles.py) aplica a correção de placares baixos de [Dixon e Coles (1997)](https://doi.org/10.1111/1467-9876.00065) em uma comparação A/B/C com folds walk-forward. Ataque e vulnerabilidade defensiva seguem a parametrização de forças por equipe discutida por [Maher (1982)](https://doi.org/10.1111/j.1467-9574.1982.tb00782.x). Nenhum experimento altera o modelo principal.
+
+**Decaimento temporal de Dixon-Coles.** A variante C multiplica a contribuição de cada partida ao log-verossimilhança por `exp(-ξ × dias_desde_o_corte)`. O `ξ` é escolhido por log loss num corte temporal interno a cada fold, entre meias-vidas de 90, 180, 365 e 730 dias. Depois os parâmetros são reajustados no treino completo desse fold. Isso é diferente de ponderar features ou descartar temporadas. As temporadas de teste externas não participam da escolha de `ξ`.
 
 **Treino com mais anos.** O experimento de histórico longo refaz o ajuste da regressão para cada ano avaliado, usando somente temporadas anteriores. Os 12 atributos continuam sendo médias dos últimos cinco jogos do clube **naquela temporada**, calculadas antes de cada partida. O script [`build_features.py`](src/data/build_features.py) reproduz os atributos do notebook de 2020–2024, permitindo aplicar o mesmo processo aos anos antigos. Isso é aprendizado supervisionado com readequação periódica: o modelo aprende relações entre atributos e resultados conhecidos. Não é uma LLM nem memoriza continuamente cada jogo após a previsão.
 
@@ -123,7 +141,7 @@ Na regra por rodada, todas as dez partidas usam um retrato do histórico dispon�
 | --- | --- | --- |
 | Linguagem | Python 3.12 | Scripts de preparação, modelagem e relatório |
 | Dados | Pandas, NumPy | Tabelas, transformações e cálculos numéricos |
-| Modelagem | scikit-learn, SciPy | Regressão logística, métricas e distribuição de gols |
+| Modelagem | scikit-learn, SciPy | Regressão logística, otimização por máxima verossimilhança, métricas e distribuição de gols |
 | Exploração | JupyterLab | Inspeção e engenharia de atributos em notebooks |
 | Visualização e documentação | Matplotlib, PyYAML | Gráficos, PDF e histórico editável |
 | Verificação | pytest | Regras de preparação, ordem temporal e funções experimentais |
@@ -141,12 +159,13 @@ brasileirao-predictor/
 │       ├── experiment_draws.py       # limites e sinais de equilíbrio
 │       ├── experiment_poisson.py     # modelo experimental de gols
 │       ├── experiment_round_draws.py # regra de empate por rodada
-│       └── experiment_long_history.py # treino com diferentes janelas históricas
+│       ├── experiment_long_history.py # treino com diferentes janelas históricas
+│       └── experiment_dixon_coles.py  # ablação A/B/C em walk-forward
 ├── notebooks/
 │   ├── 01_data_understanding.ipynb   # exploração da fonte
 │   └── 02_feature_engineering.ipynb  # atributos históricos por partida
 ├── tests/                            # verificações automatizadas
-├── docs/                             # histórico em YAML, Markdown e PDF
+├── docs/                             # histórico, PDF e gráficos de avaliação
 ├── data/raw/                         # CSV baixado; ignorado pelo Git
 ├── data/processed/                   # CSVs gerados; ignorados pelo Git
 ├── artifacts/                        # modelo e métricas locais; ignorados
@@ -178,11 +197,12 @@ python -m src.model.experiment_draws
 python -m src.model.experiment_poisson
 python -m src.model.experiment_round_draws
 python -m src.model.experiment_long_history
+python -m src.model.experiment_dixon_coles
 python -m pytest -q
 python docs/build_report.py
 ```
 
-A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O experimento por rodada mostra `Limite escolhido em 2022: 0.20 gol; teto: 5 empates/rodada`. O experimento histórico termina com `Partidas: 6840 | Temporadas completas: 18 | Features: 12` e `Melhor F1 macro médio em 2018–2022: weighted_hl_1`. Ele salva CSV e JSON locais ignorados pelo Git. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
+A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O experimento Dixon-Coles leva alguns minutos e imprime as métricas de cada fold e as médias ± desvios de A/B/C; termina com `Folds: 14 (2010–2024) | jogos teste: 5320`. Salva métricas detalhadas em `artifacts/dixon_coles_experiment.json`, ignorado pelo Git. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md`, o gráfico `docs/assets/dixon-coles-confidence.png` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
 
 ## Evaluation
 
@@ -190,6 +210,7 @@ A preparação deve informar **1.900 partidas**; o notebook de atributos termina
 - **F1 macro:** média do F1 das três classes, para que uma classe pouco reconhecida afete a avaliação.
 - **Precisão, revocação e F1 por classe:** mostram, por exemplo, quantos empates previstos foram corretos e quantos empates reais foram encontrados.
 - **Log loss:** mede a qualidade das três probabilidades previstas; menor é melhor.
+- **Brier score:** média do erro quadrático das probabilidades `H/D/A`; no experimento multiclasses, soma o erro das três probabilidades por jogo antes de tirar a média.
 - **Matriz de confusão:** mostra quais resultados reais foram trocados por quais previsões.
 
 O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar além da acurácia: prever quase sempre vitória do mandante pode produzir uma taxa global razoável e ainda deixar a maioria dos empates sem reconhecimento. A comparação de novas ideias usa temporadas posteriores às de treino e deve ser repetida com dados verdadeiramente novos antes de afirmar uma melhora estável.
@@ -203,6 +224,9 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 - Há somente cinco temporadas no recorte atual; mudanças de elenco e clubes promovidos dificultam extrapolar forças entre anos.
 - O histórico longo exclui temporadas ausentes, com formato diferente ou incompletas; os atributos reiniciam a cada temporada e não representam força acumulada entre anos.
 - Os pesos por recência afetam a regressão, mas não a imputação e a padronização. O melhor resultado médio de 2018–2022 não foi uma melhora consistente nas temporadas posteriores já examinadas.
+- O walk-forward de gols começa em 2010 para exigir pelo menos quatro temporadas de treino; exclui 2016 incompleta. As equipes não vistas no treino recebem força neutra.
+- Dixon-Coles quase não mudou a classificação frente ao Poisson simples. O decaimento elevou F1 macro, sobretudo por encontrar mais vitórias visitantes, mas ainda reconheceu apenas 2 de 1.458 empates nos folds.
+- Os folds walk-forward compartilham temporadas de treino. Média e desvio padrão descrevem a variação entre anos, mas não são intervalos de confiança independentes.
 - As análises de 2023 e 2024 já influenciaram a investigação. Uma nova temporada é necessária para uma confirmação mais independente.
 - O projeto ainda não possui rotina de atualização automática, entrada para jogos não disputados, API ou interface de usuário.
 - Os resultados são estudos retrospectivos e não constituem recomendação de aposta.
@@ -210,7 +234,7 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 ## Future Improvements
 
 1. Obter e validar temporadas posteriores a 2024 para uma avaliação mais independente.
-2. Investigar calibração das probabilidades, regras de decisão e a correção de placares baixos de Dixon–Coles, sem assumir que melhorarão empates.
+2. Buscar novas variáveis que diferenciem empates e testar sua calibração fora dos anos já analisados.
 3. Testar atributos anteriores ao jogo que representem força dos times e contexto de forma verificável.
 4. Investigar se uma medida de força dos clubes entre temporadas melhora o reconhecimento das três classes, usando validação por temporada.
 5. Automatizar a atualização da fonte e criar um fluxo seguro para montar atributos de partidas futuras.

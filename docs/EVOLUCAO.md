@@ -1,9 +1,9 @@
 # Evolução do Brasileirão Predictor
 
-**Edição 7 · Atualizado em 24/09/2026**
+**Edição 8 · Atualizado em 24/09/2026**
 
 Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos
-editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.
+editáveis; o Markdown, o PDF e o gráfico são gerados a partir dele.
 
 ## Como começou
 
@@ -27,6 +27,7 @@ Evidência inicial: commit `fee7978` de 25/07/2026.
 | 24/09/2026 | Empates por rodada | Taxas de gols próximas e teto de cinco empates testados sem consultar resultados futuros. | `experiment_round_draws.py` |
 | 24/09/2026 | Histórico longo e treino temporal | 18 temporadas completas e quatro janelas de treino comparadas ano a ano. | `experiment_long_history.py` |
 | 24/09/2026 | Pesos por recência | Quatro meias-vidas testadas no histórico longo; a melhora média não se repetiu em 2023 e 2024. | `experiment_long_history.py` |
+| 24/09/2026 | Dixon-Coles em avaliação walk-forward | Poisson simples, correção de placares baixos e decaimento temporal comparados em 14 temporadas. | `experiment_dixon_coles.py` |
 
 ## Estado atual dos dados
 
@@ -224,6 +225,67 @@ Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos. Cada par
 
 **Conclusão:** Meia-vida de um ano foi a melhor entre as quatro no F1 macro médio de 2018–2022 (0,304 ante 0,293 com três temporadas recentes), mas o log loss médio piorou. Em 2023, o F1 e a acurácia ficaram abaixo da janela de três anos; em 2024, a acurácia subiu de 48,4% para 48,7%, mas F1 e empates corretos caíram. Não há ganho consistente para substituir o modelo principal. 2023 e 2024 já haviam sido inspecionados.
 
+## Experimento: Poisson e Dixon-Coles em walk-forward
+
+Walk-forward expansivo nas temporadas completas disponíveis, com pelo menos quatro anos de treino. A estima ataque e defesa por máxima verossimilhança Poisson; B acrescenta tau de Dixon-Coles; C acrescenta pesos exponenciais exp(-xi * dias desde o corte). As forças de ataque obedecem média(log(ataque)) = 0. rho usa limites viáveis para manter tau dos quatro placares positivos, limitado a [-0,5; 0,5]. Em cada fold, xi é selecionado por log loss numa temporada interna mais recente do treino, entre meias-vidas de 90, 180, 365 e 730 dias; depois o modelo C é reajustado em todo o treino externo. Testes usam somente argmax, sem regra forçada para empate.
+
+Foram avaliados **14 folds** (2010–2024, com a temporada 2016 ausente) e **5.320 jogos** no total. Os valores abaixo são média ± desvio padrão entre temporadas; os folds se sobrepõem no treino, portanto o desvio é descritivo e não representa um intervalo de confiança.
+
+### Métricas gerais por variante
+
+| Variante | Acurácia | F1 macro | Log loss | Brier | D corretos / previstos / reais |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Poisson | 0,479 ± 0,032 | 0,253 ± 0,021 | 1,038 ± 0,024 | 0,624 ± 0,017 | 0/1/1458 |
+| Poisson + Dixon-Coles | 0,479 ± 0,033 | 0,253 ± 0,021 | 1,037 ± 0,024 | 0,624 ± 0,017 | 1/3/1458 |
+| Dixon-Coles + decaimento | 0,480 ± 0,027 | 0,287 ± 0,031 | 1,038 ± 0,027 | 0,624 ± 0,018 | 2/8/1458 |
+
+### Precisão, revocação e F1 por classe
+
+| Variante | Classe | Precisão | Revocação | F1 |
+| --- | :---: | ---: | ---: | ---: |
+| Poisson | H | 0,487 ± 0,032 | 0,962 ± 0,029 | 0,646 ± 0,031 |
+| Poisson | D | 0,000 ± 0,000 | 0,000 ± 0,000 | 0,000 ± 0,000 |
+| Poisson | A | 0,328 ± 0,104 | 0,071 ± 0,039 | 0,114 ± 0,054 |
+| Poisson + Dixon-Coles | H | 0,487 ± 0,032 | 0,962 ± 0,030 | 0,646 ± 0,031 |
+| Poisson + Dixon-Coles | D | 0,071 ± 0,267 | 0,001 ± 0,003 | 0,001 ± 0,005 |
+| Poisson + Dixon-Coles | A | 0,323 ± 0,103 | 0,069 ± 0,038 | 0,110 ± 0,053 |
+| Dixon-Coles + decaimento | H | 0,496 ± 0,028 | 0,905 ± 0,061 | 0,640 ± 0,032 |
+| Dixon-Coles + decaimento | D | 0,107 ± 0,289 | 0,001 ± 0,003 | 0,003 ± 0,007 |
+| Dixon-Coles + decaimento | A | 0,348 ± 0,100 | 0,175 ± 0,109 | 0,219 ± 0,107 |
+
+### Resultado por fold
+
+Cada célula apresenta acurácia / F1 macro / log loss / Brier / empates corretos-previstos.
+
+| Ano | ξ meia-vida (dias) | A | B | C |
+| ---: | ---: | --- | --- | --- |
+| 2010 | 365 | 0,466 / 0,239 / 1,064 / 0,642 / 0/0 | 0,466 / 0,239 / 1,061 / 0,640 / 0/0 | 0,461 / 0,225 / 1,060 / 0,639 / 0/0 |
+| 2011 | 365 | 0,482 / 0,242 / 1,052 / 0,634 / 0/0 | 0,484 / 0,249 / 1,050 / 0,634 / 1/1 | 0,495 / 0,279 / 1,047 / 0,631 / 1/1 |
+| 2012 | 730 | 0,466 / 0,242 / 1,045 / 0,629 / 0/0 | 0,466 / 0,242 / 1,043 / 0,627 / 0/0 | 0,458 / 0,239 / 1,047 / 0,630 / 0/0 |
+| 2013 | 730 | 0,487 / 0,256 / 1,040 / 0,625 / 0/0 | 0,484 / 0,250 / 1,038 / 0,624 / 0/0 | 0,482 / 0,259 / 1,045 / 0,629 / 0/0 |
+| 2014 | 730 | 0,524 / 0,256 / 0,998 / 0,596 / 0/0 | 0,526 / 0,257 / 0,999 / 0,596 / 0/0 | 0,524 / 0,272 / 1,000 / 0,597 / 0/1 |
+| 2015 | 730 | 0,521 / 0,260 / 1,008 / 0,604 / 0/0 | 0,521 / 0,260 / 1,009 / 0,605 / 0/0 | 0,511 / 0,275 / 1,005 / 0,602 / 0/0 |
+| 2017 | 730 | 0,432 / 0,222 / 1,072 / 0,649 / 0/0 | 0,432 / 0,222 / 1,072 / 0,648 / 0/0 | 0,455 / 0,278 / 1,073 / 0,648 / 0/0 |
+| 2018 | 730 | 0,539 / 0,288 / 0,995 / 0,594 / 0/0 | 0,539 / 0,288 / 0,993 / 0,593 / 0/0 | 0,529 / 0,302 / 0,999 / 0,597 / 0/0 |
+| 2019 | 730 | 0,492 / 0,277 / 1,023 / 0,614 / 0/0 | 0,492 / 0,277 / 1,023 / 0,614 / 0/0 | 0,489 / 0,303 / 1,001 / 0,598 / 0/1 |
+| 2020 | 180 | 0,445 / 0,219 / 1,051 / 0,635 / 0/0 | 0,445 / 0,219 / 1,051 / 0,635 / 0/0 | 0,458 / 0,324 / 1,060 / 0,640 / 1/2 |
+| 2021 | 730 | 0,434 / 0,262 / 1,062 / 0,643 / 0/0 | 0,434 / 0,262 / 1,061 / 0,642 / 0/0 | 0,450 / 0,308 / 1,054 / 0,637 / 0/0 |
+| 2022 | 180 | 0,471 / 0,279 / 1,042 / 0,626 / 0/0 | 0,468 / 0,274 / 1,041 / 0,626 / 0/0 | 0,445 / 0,315 / 1,073 / 0,642 / 0/2 |
+| 2023 | 730 | 0,468 / 0,236 / 1,040 / 0,625 / 0/1 | 0,466 / 0,230 / 1,040 / 0,625 / 0/2 | 0,484 / 0,320 / 1,031 / 0,617 / 0/1 |
+| 2024 | 730 | 0,476 / 0,271 / 1,043 / 0,627 / 0/0 | 0,476 / 0,271 / 1,043 / 0,627 / 0/0 | 0,476 / 0,323 / 1,040 / 0,624 / 0/0 |
+
+### Confiança prevista e acerto observado
+
+Cada ponto agrega previsões fora da amostra de todos os folds e agrupa jogos pela confiança máxima.
+
+![Confiança média e acerto observado por faixa para Poisson, Dixon-Coles e Dixon-Coles com decaimento](assets/dixon-coles-confidence.png)
+
+### Interpretação
+
+Dixon-Coles B quase não alterou as decisões da variante A: acurácia, F1 macro e Brier ficaram praticamente iguais; log loss melhorou em média apenas 0,0009. As variantes A e B previram respectivamente 1 e 3 empates nos 5.320 jogos, com 0 e 1 acertos. C elevou F1 macro médio de 0,253 para 0,287 e recall de visitante de 0,071 para 0,175, mas reduziu recall do mandante de 0,962 para 0,905. Não melhorou de forma consistente log loss ou Brier e reconheceu somente 2 dos 1.458 empates reais (2/8 previsões). O ganho de F1 de C veio principalmente da classe A, não da classe D. Os resultados não confirmam melhora consistente na previsão de empates. As 14 temporadas incluem 2010–2015 e 2017–2024; 2016 foi excluída por incompletude. Desvios são descritivos e não intervalos de confiança: folds sequenciais compartilham dados de treino. O artefato local preserva métricas completas, parâmetros e probabilidades por fold.
+
+As matrizes de confusão, os valores por classe em cada fold, os parâmetros ajustados e as escolhas internas de ξ ficam no JSON local gerado pelo script. O pipeline verifica que nenhum jogo de treino ocorre depois do início do fold de teste.
+
 ## O que existe hoje
 
 - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -231,6 +293,7 @@ Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos. Cada par
 - Primeiro modelo treinado e comparado com uma referência simples.
 - Diagnóstico de erros de 2023 e previsões retrospectivas de 2024 gerados localmente.
 - Experimento de empates reproduzível, sem trocar o modelo principal.
+- Ablation Poisson/Dixon-Coles/decaimento com 14 folds walk-forward e gráfico de calibração.
 
 ## Limites conhecidos
 
@@ -242,12 +305,13 @@ Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos. Cada par
 - A regra de até cinco empates por rodada aumentou a revocação de D, mas reduziu acertos em H e A.
 - Incluir todos os anos desde 2006 reduziu o F1 macro médio em 2018–2022 e não corrigiu empates.
 - Pesos maiores para anos recentes elevaram o F1 médio de 2018–2022, mas não sustentaram melhora em 2023 e 2024.
+- No Dixon-Coles, o decaimento elevou F1 macro principalmente por vitórias visitantes; a recuperação de empates permaneceu residual.
 - Ainda não há fluxo para montar features de uma partida futura.
 - A fonte processada cobre apenas até a temporada de 2024.
 
 ## Próximas etapas
 
-1. Investigar força dos clubes entre temporadas, regras de decisão e correção de placares baixos com novas validações temporais.
+1. Investigar força dos clubes entre temporadas e variáveis que diferenciem empates com novas validações temporais.
 2. Reunir uma temporada nova para confirmar se a melhora em empates se repete.
 3. Atualizar a fonte de dados e gerar features para partidas não disputadas.
 4. Criar uma interface somente após validar o fluxo de previsão futura.
@@ -260,7 +324,7 @@ Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos. Cada par
    saídas do projeto. Registre limites e trabalho pendente.
 3. Na raiz do repositório, execute `python docs/build_report.py` e revise
    o diff de `docs/EVOLUCAO.md` e o PDF antes de publicar.
-4. Versione juntos o YAML, o Markdown e o PDF.
+4. Versione juntos o YAML, o Markdown, o PDF e os gráficos gerados.
 
 ## Fontes internas desta edição
 
@@ -273,3 +337,4 @@ Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos. Cada par
 - src/model/experiment_round_draws.py e artifacts/round_draw_experiment.json, gerado localmente.
 - src/model/experiment_long_history.py e artifacts/long_history_experiment.json, gerado localmente.
 - Pesos por recência medidos no mesmo artifacts/long_history_experiment.json, gerado localmente.
+- src/model/experiment_dixon_coles.py e artifacts/dixon_coles_experiment.json, gerado localmente.

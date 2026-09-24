@@ -1,7 +1,7 @@
 """Gera o histórico em Markdown e o relatório visual em PDF.
 
 Uso, na raiz do projeto: python docs/build_report.py
-O YAML é a fonte editável; os dois arquivos gerados devem ser versionados juntos.
+O YAML é a fonte editável; Markdown, PDF e gráfico são gerados e versionados juntos.
 """
 
 from __future__ import annotations
@@ -280,19 +280,82 @@ def verify_local_recency_experiment(data: dict) -> None:
                         raise ValueError(f"Acertos de {label} diferem em {section}/{strategy}.")
 
 
+def verify_local_dixon_coles_experiment(data: dict) -> None:
+    path = ROOT / "artifacts/dixon_coles_experiment.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))
+    recorded = data["experimento_dixon_coles"]
+    if (recorded["folds"] != measured["test_years"]
+            or recorded["jogos_teste"] != sum(fold["test_games"] for fold in measured["folds"].values())):
+        raise ValueError("Folds ou cobertura Dixon-Coles diferem do relatório local.")
+    for variant in ("A", "B", "C"):
+        observed = measured["variants"][variant]
+        saved = recorded["resumo"][variant]
+        for metric in ("accuracy", "f1_macro", "log_loss", "brier_score"):
+            for field, measured_field in (("media", "mean"), ("desvio", "std")):
+                if abs(saved["metricas"][metric][field] - observed["mean_std"][metric][measured_field]) > 0.000001:
+                    raise ValueError(f"Resumo {variant}/{metric}/{field} Dixon-Coles desatualizado.")
+        for label in ("H", "D", "A"):
+            for metric, json_metric in (("precision", "precision"), ("recall", "recall"), ("f1", "f1")):
+                for field, measured_field in (("media", "mean"), ("desvio", "std")):
+                    value = observed["mean_std"][f"{json_metric}_{label}"][measured_field]
+                    if abs(saved["classes"][label][metric][field] - value) > 0.000001:
+                        raise ValueError(f"Métrica por classe {variant}/{label}/{metric} desatualizada.")
+        pooled_draws = observed["pooled_draws"]
+        if saved["empates"] != {
+            "corretos": pooled_draws["correct"],
+            "previstos": pooled_draws["predicted"],
+            "reais": pooled_draws["actual"],
+        }:
+            raise ValueError(f"Contagem pooled de empates da variante {variant} está desatualizada.")
+        if saved["matriz_confusao_pooled_ADH"] != observed["pooled_confusion_matrix"]:
+            raise ValueError(f"Matriz agregada da variante {variant} está desatualizada.")
+        for saved_band, measured_band in zip(saved["faixas_confianca_pooled"], observed["pooled_confidence_bands"]):
+            expected = {
+                "de": measured_band["from"], "ate": measured_band["to"],
+                "jogos": measured_band["games"],
+                "confianca_media": measured_band["mean_confidence"],
+                "acerto_observado": measured_band["observed_accuracy"],
+            }
+            if any(saved_band[key] != value if value is None or isinstance(value, int)
+                   else abs(saved_band[key] - value) > 0.000001 for key, value in expected.items()):
+                raise ValueError(f"Faixa de confiança da variante {variant} está desatualizada.")
+    for saved_fold in recorded["folds_detalhados"]:
+        year = str(saved_fold["ano"])
+        measured_fold = measured["folds"][year]
+        if (saved_fold["jogos_treino"] != measured_fold["training_games"]
+                or saved_fold["treino_termina"] != measured_fold["train_last_date"][:10]
+                or saved_fold["teste_comeca"] != measured_fold["test_first_date"][:10]
+                or saved_fold["meia_vida_C_dias"] != measured_fold["xi_selection"]["selected_half_life_days"]):
+            raise ValueError(f"Corte temporal do fold {year} difere do relatório local.")
+        for variant in ("A", "B", "C"):
+            saved_metrics = saved_fold[variant]
+            measured_metrics = measured_fold["metrics"][variant]
+            for yaml_key, json_key in (("acuracia", "accuracy"), ("f1_macro", "f1_macro"),
+                                       ("log_loss", "log_loss"), ("brier", "brier_score")):
+                if abs(saved_metrics[yaml_key] - measured_metrics[json_key]) > 0.000001:
+                    raise ValueError(f"Métrica {variant}/{yaml_key} do fold {year} está desatualizada.")
+            if (saved_metrics["matriz_confusao_ADH"] != measured_metrics["confusion_matrix"]
+                    or saved_metrics["empates_corretos_previstos"] !=
+                    f"{measured_metrics['draw_correct_predicted']['correct']}/{measured_metrics['draw_correct_predicted']['predicted']}"):
+                raise ValueError(f"Diagnóstico do fold {year}/{variant} difere do relatório local.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
     validation = data["diagnostico_validacao_2023"]
     total_games = f"{data['dados']['total_jogos']:,}".replace(",", ".")
     long_history_games = f"{data['experimento_historico_longo']['partidas']:,}".replace(",", ".")
+    dixon_test_games = f"{data['experimento_dixon_coles']['jogos_teste']:,}".replace(",", ".")
     lines = [
         f"# Evolução do {data['titulo']}",
         "",
         f"**Edição {data['edicao']} · Atualizado em {date_br(data['atualizado_em'])}**",
         "",
         "Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos",
-        "editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.",
+        "editáveis; o Markdown, o PDF e o gráfico são gerados a partir dele.",
         "",
         "## Como começou",
         "",
@@ -566,7 +629,69 @@ def make_markdown(data: dict) -> str:
                 f"{row['empates_corretos']}/{row['empates_previstos']} | "
                 f"{row['h_corretos']} | {row['a_corretos']} |"
             )
-    lines += ["", "**Conclusão:** " + recency["conclusao"], "", "## O que existe hoje", ""]
+    dixon = data["experimento_dixon_coles"]
+    lines += [
+        "", "**Conclusão:** " + recency["conclusao"],
+        "", "## Experimento: Poisson e Dixon-Coles em walk-forward", "",
+        dixon["protocolo"], "",
+        f"Foram avaliados **{len(dixon['folds'])} folds** ({dixon['folds'][0]}–{dixon['folds'][-1]}, "
+        f"com a temporada 2016 ausente) e **{dixon_test_games} jogos** no total. "
+        "Os valores abaixo são média ± desvio padrão entre temporadas; os folds se sobrepõem no treino, "
+        "portanto o desvio é descritivo e não representa um intervalo de confiança.",
+        "", "### Métricas gerais por variante", "",
+        "| Variante | Acurácia | F1 macro | Log loss | Brier | D corretos / previstos / reais |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    variant_names = (("A", "Poisson"), ("B", "Poisson + Dixon-Coles"),
+                     ("C", "Dixon-Coles + decaimento"))
+    for variant, name in variant_names:
+        row = dixon["resumo"][variant]
+        metrics = row["metricas"]
+        draws = row["empates"]
+        lines.append(
+            f"| {name} | {decimal(metrics['accuracy']['media'])} ± {decimal(metrics['accuracy']['desvio'])} | "
+            f"{decimal(metrics['f1_macro']['media'])} ± {decimal(metrics['f1_macro']['desvio'])} | "
+            f"{decimal(metrics['log_loss']['media'])} ± {decimal(metrics['log_loss']['desvio'])} | "
+            f"{decimal(metrics['brier_score']['media'])} ± {decimal(metrics['brier_score']['desvio'])} | "
+            f"{draws['corretos']}/{draws['previstos']}/{draws['reais']} |"
+        )
+    lines += [
+        "", "### Precisão, revocação e F1 por classe", "",
+        "| Variante | Classe | Precisão | Revocação | F1 |",
+        "| --- | :---: | ---: | ---: | ---: |",
+    ]
+    for variant, name in variant_names:
+        for label_name in ("H", "D", "A"):
+            row = dixon["resumo"][variant]["classes"][label_name]
+            lines.append(
+                f"| {name} | {label_name} | "
+                f"{decimal(row['precision']['media'])} ± {decimal(row['precision']['desvio'])} | "
+                f"{decimal(row['recall']['media'])} ± {decimal(row['recall']['desvio'])} | "
+                f"{decimal(row['f1']['media'])} ± {decimal(row['f1']['desvio'])} |"
+            )
+    lines += [
+        "", "### Resultado por fold", "",
+        "Cada célula apresenta acurácia / F1 macro / log loss / Brier / empates corretos-previstos.",
+        "", "| Ano | ξ meia-vida (dias) | A | B | C |", "| ---: | ---: | --- | --- | --- |",
+    ]
+    for fold in dixon["folds_detalhados"]:
+        cells = []
+        for variant in ("A", "B", "C"):
+            row = fold[variant]
+            cells.append(
+                f"{decimal(row['acuracia'])} / {decimal(row['f1_macro'])} / "
+                f"{decimal(row['log_loss'])} / {decimal(row['brier'])} / "
+                f"{row['empates_corretos_previstos']}"
+            )
+        lines.append(f"| {fold['ano']} | {fold['meia_vida_C_dias']} | " + " | ".join(cells) + " |")
+    lines += [
+        "", "### Confiança prevista e acerto observado", "",
+        "Cada ponto agrega previsões fora da amostra de todos os folds e agrupa jogos pela confiança máxima.",
+        "", "![Confiança média e acerto observado por faixa para Poisson, Dixon-Coles e Dixon-Coles com decaimento](assets/dixon-coles-confidence.png)",
+        "", "### Interpretação", "", dixon["conclusao"],
+        "", "As matrizes de confusão, os valores por classe em cada fold, os parâmetros ajustados e as escolhas internas de ξ ficam no JSON local gerado pelo script. O pipeline verifica que nenhum jogo de treino ocorre depois do início do fold de teste.",
+        "", "## O que existe hoje", "",
+    ]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["limites"]]
@@ -582,7 +707,7 @@ def make_markdown(data: dict) -> str:
         "   saídas do projeto. Registre limites e trabalho pendente.",
         "3. Na raiz do repositório, execute `python docs/build_report.py` e revise",
         "   o diff de `docs/EVOLUCAO.md` e o PDF antes de publicar.",
-        "4. Versione juntos o YAML, o Markdown e o PDF.",
+        "4. Versione juntos o YAML, o Markdown, o PDF e os gráficos gerados.",
         "",
         "## Fontes internas desta edição",
         "",
@@ -988,7 +1113,8 @@ def poisson_page(data: dict, number: int, total: int):
             "Ataque, defesa e mando geram taxas de gols; delas saem probabilidades para H, D e A. "
             "Em 2023 o Poisson teve log loss menor, mas a regra de maior probabilidade não escolheu "
             "nenhum empate. Não há evidência de melhora simultânea em empate, mandante e visitante. "
-            "A correção de Dixon-Coles ainda não foi implementada; 2024 não entrou no experimento.",
+            "Esse experimento isolado não incluía Dixon-Coles nem avaliou 2024; a comparação nova "
+            "walk-forward está registrada adiante.",
             119, size=9, color=INK)
     return fig
 
@@ -1081,6 +1207,56 @@ def long_history_page(data: dict, number: int, total: int):
     return fig
 
 
+def add_dixon_calibration_axes(ax, experiment: dict) -> None:
+    palette = {"A": TEAL, "B": "#D99035", "C": "#6755A5"}
+    names = {"A": "A · Poisson", "B": "B · Dixon-Coles", "C": "C · Dixon-Coles + decaimento"}
+    ax.plot([0.3, 0.8], [0.3, 0.8], ls="--", lw=1.2, color="#9AAAB2", label="Calibração ideal")
+    for variant in ("A", "B", "C"):
+        bands = experiment["resumo"][variant]["faixas_confianca_pooled"]
+        valid = [band for band in bands if band["confianca_media"] is not None]
+        ax.plot([band["confianca_media"] for band in valid],
+                [band["acerto_observado"] for band in valid],
+                marker="o", ms=5, lw=2, color=palette[variant], label=names[variant])
+    ax.set_xlim(0.30, 0.80)
+    ax.set_ylim(0.25, 0.80)
+    ax.set_xlabel("Confiança média da previsão")
+    ax.set_ylabel("Fração de previsões corretas")
+    ax.set_xticks([0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
+    ax.set_yticks([0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
+    ax.grid(color=LINE, lw=0.8)
+    ax.legend(frameon=False, fontsize=8, loc="upper left")
+    ax.set_axisbelow(True)
+
+
+def save_dixon_calibration_plot(data: dict) -> None:
+    output = ROOT / "docs/assets/dixon-coles-confidence.png"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(9, 5.3), facecolor=PALE)
+    ax.set_facecolor(WHITE)
+    add_dixon_calibration_axes(ax, data["experimento_dixon_coles"])
+    fig.tight_layout()
+    fig.savefig(output, dpi=180, facecolor=PALE, bbox_inches="tight")
+    plt.close(fig)
+
+
+def dixon_coles_page(data: dict, number: int, total: int):
+    fig = page("Poisson, Dixon-Coles e decaimento", "Validação walk-forward", number, total)
+    experiment = data["experimento_dixon_coles"]
+    box(fig, 0.06, 0.40, 0.88, 0.42)
+    ax = fig.add_axes([0.12, 0.47, 0.76, 0.29], facecolor=WHITE)
+    ax.set_zorder(3)
+    add_dixon_calibration_axes(ax, experiment)
+    box(fig, 0.06, 0.14, 0.88, 0.22, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.32, "14 FOLDS · 5.320 JOGOS · DADOS DE TESTE FORA DO TREINO", size=10,
+          color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.275,
+            "B quase não mudou A: F1 macro 0,253 ± 0,021 para ambas. C chegou a 0,287 ± 0,031, "
+            "mas ainda acertou somente 2 de 1.458 empates. A maior parte do ganho de C veio da "
+            "recuperação de vitórias visitantes; a calibração geral pouco mudou.",
+            116, size=9, color=INK)
+    return fig
+
+
 def recency_page(data: dict, number: int, total: int):
     fig = page("Dar mais peso ao passado recente ajuda?", "Pesos por recência", number, total)
     experiment = data["experimento_pesos_recencia"]
@@ -1136,7 +1312,7 @@ def next_page(data: dict, number: int, total: int):
     wrapped(fig, 0.09, 0.29,
             "Ao concluir uma mudança: adicione um marco com data e evidência em docs/evolucao.yaml; "
             "atualize apenas números medidos; execute python docs/build_report.py; "
-            "revise o Markdown e o PDF; publique os três arquivos juntos.",
+            "revise o Markdown, o PDF e os gráficos; publique os artefatos juntos.",
             124, size=10, color=WHITE)
     label(fig, 0.09, 0.205, "FONTES  Git do projeto · CSV processado · relatório local de métricas · previsões de 2024",
           size=8, color="#AFCDD4")
@@ -1146,7 +1322,7 @@ def next_page(data: dict, number: int, total: int):
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
     history_chunks = [milestones[i : i + 6] for i in range(0, len(milestones), 6)] or [[]]
-    total_pages = 11 + len(history_chunks)
+    total_pages = 12 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -1154,15 +1330,16 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 9, total_pages),
-            model_page(data, total_pages - 8, total_pages),
-            validation_page(data, total_pages - 7, total_pages),
-            confidence_page(data, total_pages - 6, total_pages),
-            draw_experiment_page(data, total_pages - 5, total_pages),
-            poisson_page(data, total_pages - 4, total_pages),
-            round_rule_page(data, total_pages - 3, total_pages),
-            long_history_page(data, total_pages - 2, total_pages),
-            recency_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 10, total_pages),
+            model_page(data, total_pages - 9, total_pages),
+            validation_page(data, total_pages - 8, total_pages),
+            confidence_page(data, total_pages - 7, total_pages),
+            draw_experiment_page(data, total_pages - 6, total_pages),
+            poisson_page(data, total_pages - 5, total_pages),
+            round_rule_page(data, total_pages - 4, total_pages),
+            long_history_page(data, total_pages - 3, total_pages),
+            recency_page(data, total_pages - 2, total_pages),
+            dixon_coles_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -1183,10 +1360,13 @@ def main() -> None:
     verify_local_round_experiment(data)
     verify_local_long_history_experiment(data)
     verify_local_recency_experiment(data)
+    verify_local_dixon_coles_experiment(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
+    save_dixon_calibration_plot(data)
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")
     print(f"PDF: {PDF}")
+    print(f"Gráfico: {DOCS_DIR / 'assets/dixon-coles-confidence.png'}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 titulo: Brasileirão Predictor
-edicao: 7
+edicao: 8
 atualizado_em: 2026-09-24
-subtitulo: Da ideia inicial ao teste de pesos por recência
+subtitulo: Da ideia inicial ao teste Dixon-Coles walk-forward
 
 origem:
   data: 2026-07-25
@@ -72,6 +72,11 @@ marcos:
     titulo: Pesos por recência
     detalhe: Quatro meias-vidas testadas no histórico longo; a melhora média não se repetiu em 2023 e 2024.
     evidencia: experiment_long_history.py
+    fase: Experimento
+  - data: 2026-09-24
+    titulo: Dixon-Coles em avaliação walk-forward
+    detalhe: Poisson simples, correção de placares baixos e decaimento temporal comparados em 14 temporadas.
+    evidencia: experiment_dixon_coles.py
     fase: Experimento
 
 dados:
@@ -270,6 +275,654 @@ experimento_pesos_recencia:
     corretos caíram. Não há ganho consistente para substituir o modelo
     principal. 2023 e 2024 já haviam sido inspecionados.
 
+experimento_dixon_coles:
+  protocolo: >-
+    Walk-forward expansivo nas temporadas completas disponíveis, com pelo menos quatro anos de treino.
+    A estima ataque e defesa por máxima verossimilhança Poisson; B acrescenta tau de Dixon-Coles;
+    C acrescenta pesos exponenciais exp(-xi * dias desde o corte). As forças de ataque obedecem
+    média(log(ataque)) = 0. rho usa limites viáveis para manter tau dos quatro placares positivos,
+    limitado a [-0,5; 0,5]. Em cada fold, xi é selecionado por log loss numa temporada interna
+    mais recente do treino, entre meias-vidas de 90, 180, 365 e 730 dias; depois o modelo C é
+    reajustado em todo o treino externo. Testes usam somente argmax, sem regra forçada para empate.
+  folds: [2010, 2011, 2012, 2013, 2014, 2015, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+  jogos_teste: 5320
+  observacao_variancia: Desvio padrão descritivo entre temporadas; folds são sequenciais e não independentes.
+  variantes:
+    A: Poisson independente, rho=0, pesos uniformes.
+    B: Poisson com tau de Dixon-Coles, rho estimado, pesos uniformes.
+    C: Variante B com pesos temporais e xi escolhido dentro do treino de cada fold.
+  meia_vida_selecionada_contagem:
+    90: 0
+    180: 2
+    365: 2
+    730: 10
+  resumo:
+    A:
+      metricas:
+        accuracy: {media: 0.47875940, desvio: 0.03236973}
+        f1_macro: {media: 0.25345639, desvio: 0.02108099}
+        log_loss: {media: 1.03820920, desvio: 0.02390561}
+        brier_score: {media: 0.62441344, desvio: 0.01702431}
+      classes:
+        H:
+          precision: {media: 0.48713563, desvio: 0.03160858}
+          recall: {media: 0.96156527, desvio: 0.02930793}
+          f1: {media: 0.64617442, desvio: 0.03072864}
+        D:
+          precision: {media: 0.00000000, desvio: 0.00000000}
+          recall: {media: 0.00000000, desvio: 0.00000000}
+          f1: {media: 0.00000000, desvio: 0.00000000}
+        A:
+          precision: {media: 0.32794745, desvio: 0.10427267}
+          recall: {media: 0.07146597, desvio: 0.03857268}
+          f1: {media: 0.11419476, desvio: 0.05427406}
+      empates: {corretos: 0, previstos: 1, reais: 1458}
+      matriz_confusao_pooled_ADH: [[93, 1, 1217], [93, 0, 1365], [97, 0, 2454]]
+      faixas_confianca_pooled:
+        - {de: 0.0, ate: 0.4, jogos: 651, confianca_media: 0.37904884, acerto_observado: 0.35023041}
+        - {de: 0.4, ate: 0.5, jogos: 2142, confianca_media: 0.45328334, acerto_observado: 0.42717087}
+        - {de: 0.5, ate: 0.6, jogos: 2002, confianca_media: 0.54468501, acerto_observado: 0.53696304}
+        - {de: 0.6, ate: 0.7, jogos: 510, confianca_media: 0.63269704, acerto_observado: 0.62941176}
+        - {de: 0.7, ate: 1.0, jogos: 15, confianca_media: 0.71966631, acerto_observado: 0.53333333}
+    B:
+      metricas:
+        accuracy: {media: 0.47857143, desvio: 0.03276870}
+        f1_macro: {media: 0.25273236, desvio: 0.02085991}
+        log_loss: {media: 1.03735293, desvio: 0.02352011}
+        brier_score: {media: 0.62393703, desvio: 0.01667307}
+      classes:
+        H:
+          precision: {media: 0.48733430, desvio: 0.03167724}
+          recall: {media: 0.96192785, desvio: 0.02971334}
+          f1: {media: 0.64642378, desvio: 0.03078466}
+        D:
+          precision: {media: 0.07142857, desvio: 0.26726124}
+          recall: {media: 0.00068027, desvio: 0.00254535}
+          f1: {media: 0.00134771, desvio: 0.00504266}
+        A:
+          precision: {media: 0.32251461, desvio: 0.10279896}
+          recall: {media: 0.06928065, desvio: 0.03849985}
+          f1: {media: 0.11042558, desvio: 0.05339447}
+      empates: {corretos: 1, previstos: 3, reais: 1458}
+      matriz_confusao_pooled_ADH: [[90, 2, 1219], [95, 1, 1362], [96, 0, 2455]]
+      faixas_confianca_pooled:
+        - {de: 0.0, ate: 0.4, jogos: 740, confianca_media: 0.37671076, acerto_observado: 0.34459459}
+        - {de: 0.4, ate: 0.5, jogos: 2167, confianca_media: 0.45271847, acerto_observado: 0.43470235}
+        - {de: 0.5, ate: 0.6, jogos: 1935, confianca_media: 0.54383621, acerto_observado: 0.54418605}
+        - {de: 0.6, ate: 0.7, jogos: 466, confianca_media: 0.63224467, acerto_observado: 0.62017167}
+        - {de: 0.7, ate: 1.0, jogos: 12, confianca_media: 0.72093567, acerto_observado: 0.58333333}
+    C:
+      metricas:
+        accuracy: {media: 0.47969925, desvio: 0.02729804}
+        f1_macro: {media: 0.28730235, desvio: 0.03148966}
+        log_loss: {media: 1.03830443, desvio: 0.02672171}
+        brier_score: {media: 0.62374212, desvio: 0.01828227}
+      classes:
+        H:
+          precision: {media: 0.49575498, desvio: 0.02830966}
+          recall: {media: 0.90478250, desvio: 0.06081529}
+          f1: {media: 0.63979488, desvio: 0.03195851}
+        D:
+          precision: {media: 0.10714286, desvio: 0.28946711}
+          recall: {media: 0.00134165, desvio: 0.00341080}
+          f1: {media: 0.00264641, desvio: 0.00672840}
+        A:
+          precision: {media: 0.34787659, desvio: 0.09998578}
+          recall: {media: 0.17517669, desvio: 0.10900336}
+          f1: {media: 0.21946577, desvio: 0.10652595}
+      empates: {corretos: 2, previstos: 8, reais: 1458}
+      matriz_confusao_pooled_ADH: [[237, 5, 1069], [177, 2, 1279], [237, 1, 2313]]
+      faixas_confianca_pooled:
+        - {de: 0.0, ate: 0.4, jogos: 892, confianca_media: 0.37665988, acerto_observado: 0.34977578}
+        - {de: 0.4, ate: 0.5, jogos: 2080, confianca_media: 0.44935310, acerto_observado: 0.44278846}
+        - {de: 0.5, ate: 0.6, jogos: 1601, confianca_media: 0.54451823, acerto_observado: 0.54216115}
+        - {de: 0.6, ate: 0.7, jogos: 630, confianca_media: 0.63775006, acerto_observado: 0.60476190}
+        - {de: 0.7, ate: 1.0, jogos: 117, confianca_media: 0.75262691, acerto_observado: 0.59829060}
+  folds_detalhados:
+    - ano: 2010
+      jogos_treino: 1520
+      treino_termina: '2009-12-06'
+      teste_comeca: '2010-05-08'
+      meia_vida_C_dias: 365
+      A:
+        acuracia: 0.46578947
+        f1_macro: 0.23933627
+        log_loss: 1.06413018
+        brier: 0.64184370
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 79], [6, 0, 112], [6, 0, 173]]
+        classes:
+          H: {precisao: 0.47527473, recall: 0.96648045, f1: 0.63720074}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.25000000, recall: 0.04819277, f1: 0.08080808}
+      B:
+        acuracia: 0.46578947
+        f1_macro: 0.23933627
+        log_loss: 1.06081504
+        brier: 0.63985510
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 79], [6, 0, 112], [6, 0, 173]]
+        classes:
+          H: {precisao: 0.47527473, recall: 0.96648045, f1: 0.63720074}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.25000000, recall: 0.04819277, f1: 0.08080808}
+      C:
+        acuracia: 0.46052632
+        f1_macro: 0.22536650
+        log_loss: 1.05959695
+        brier: 0.63948477
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[2, 0, 81], [6, 0, 112], [6, 0, 173]]
+        classes:
+          H: {precisao: 0.47267760, recall: 0.96648045, f1: 0.63486239}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.14285714, recall: 0.02409639, f1: 0.04123711}
+    - ano: 2011
+      jogos_treino: 1900
+      treino_termina: '2010-12-05'
+      teste_comeca: '2011-05-21'
+      meia_vida_C_dias: 365
+      A:
+        acuracia: 0.48157895
+        f1_macro: 0.24207354
+        log_loss: 1.05192253
+        brier: 0.63432546
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 87], [3, 0, 102], [5, 0, 179]]
+        classes:
+          H: {precisao: 0.48641304, recall: 0.97282609, f1: 0.64855072}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.33333333, recall: 0.04395604, f1: 0.07766990}
+      B:
+        acuracia: 0.48421053
+        f1_macro: 0.24875520
+        log_loss: 1.05049638
+        brier: 0.63354068
+        empates_corretos_previstos: '1/1'
+        matriz_confusao_ADH: [[4, 0, 87], [3, 1, 101], [5, 0, 179]]
+        classes:
+          H: {precisao: 0.48773842, recall: 0.97282609, f1: 0.64972777}
+          D: {precisao: 1.00000000, recall: 0.00952381, f1: 0.01886792}
+          A: {precisao: 0.33333333, recall: 0.04395604, f1: 0.07766990}
+      C:
+        acuracia: 0.49473684
+        f1_macro: 0.27897202
+        log_loss: 1.04749941
+        brier: 0.63073842
+        empates_corretos_previstos: '1/1'
+        matriz_confusao_ADH: [[9, 0, 82], [4, 1, 100], [6, 0, 178]]
+        classes:
+          H: {precisao: 0.49444444, recall: 0.96739130, f1: 0.65441176}
+          D: {precisao: 1.00000000, recall: 0.00952381, f1: 0.01886792}
+          A: {precisao: 0.47368421, recall: 0.09890110, f1: 0.16363636}
+    - ano: 2012
+      jogos_treino: 2280
+      treino_termina: '2011-12-04'
+      teste_comeca: '2012-05-19'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.46578947
+        f1_macro: 0.24178056
+        log_loss: 1.04503774
+        brier: 0.62854914
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[5, 0, 87], [10, 0, 95], [11, 0, 172]]
+        classes:
+          H: {precisao: 0.48587571, recall: 0.93989071, f1: 0.64059590}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.19230769, recall: 0.05434783, f1: 0.08474576}
+      B:
+        acuracia: 0.46578947
+        f1_macro: 0.24178056
+        log_loss: 1.04283871
+        brier: 0.62713081
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[5, 0, 87], [10, 0, 95], [11, 0, 172]]
+        classes:
+          H: {precisao: 0.48587571, recall: 0.93989071, f1: 0.64059590}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.19230769, recall: 0.05434783, f1: 0.08474576}
+      C:
+        acuracia: 0.45789474
+        f1_macro: 0.23870452
+        log_loss: 1.04728374
+        brier: 0.63019414
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[5, 0, 87], [11, 0, 94], [14, 0, 169]]
+        classes:
+          H: {precisao: 0.48285714, recall: 0.92349727, f1: 0.63414634}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.16666667, recall: 0.05434783, f1: 0.08196721}
+    - ano: 2013
+      jogos_treino: 2660
+      treino_termina: '2012-12-02'
+      teste_comeca: '2013-05-25'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.48684211
+        f1_macro: 0.25618538
+        log_loss: 1.03996927
+        brier: 0.62488333
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[6, 0, 82], [3, 0, 105], [5, 0, 179]]
+        classes:
+          H: {precisao: 0.48907104, recall: 0.97282609, f1: 0.65090909}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.42857143, recall: 0.06818182, f1: 0.11764706}
+      B:
+        acuracia: 0.48421053
+        f1_macro: 0.24957922
+        log_loss: 1.03782205
+        brier: 0.62357109
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[5, 0, 83], [3, 0, 105], [5, 0, 179]]
+        classes:
+          H: {precisao: 0.48773842, recall: 0.97282609, f1: 0.64972777}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.38461538, recall: 0.05681818, f1: 0.09900990}
+      C:
+        acuracia: 0.48157895
+        f1_macro: 0.25890423
+        log_loss: 1.04498481
+        brier: 0.62861758
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[7, 0, 81], [4, 0, 104], [8, 0, 176]]
+        classes:
+          H: {precisao: 0.48753463, recall: 0.95652174, f1: 0.64587156}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.36842105, recall: 0.07954545, f1: 0.13084112}
+    - ano: 2014
+      jogos_treino: 3040
+      treino_termina: '2013-12-08'
+      teste_comeca: '2014-04-19'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.52368421
+        f1_macro: 0.25582577
+        log_loss: 0.99836501
+        brier: 0.59566186
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 87], [5, 0, 87], [2, 0, 195]]
+        classes:
+          H: {precisao: 0.52845528, recall: 0.98984772, f1: 0.68904594}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.36363636, recall: 0.04395604, f1: 0.07843137}
+      B:
+        acuracia: 0.52631579
+        f1_macro: 0.25671362
+        log_loss: 0.99904348
+        brier: 0.59641239
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 87], [4, 0, 88], [1, 0, 196]]
+        classes:
+          H: {precisao: 0.52830189, recall: 0.99492386, f1: 0.69014085}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.44444444, recall: 0.04395604, f1: 0.08000000}
+      C:
+        acuracia: 0.52368421
+        f1_macro: 0.27229730
+        log_loss: 1.00030588
+        brier: 0.59739260
+        empates_corretos_previstos: '0/1'
+        matriz_confusao_ADH: [[7, 1, 83], [9, 0, 83], [5, 0, 192]]
+        classes:
+          H: {precisao: 0.53631285, recall: 0.97461929, f1: 0.69189189}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.33333333, recall: 0.07692308, f1: 0.12500000}
+    - ano: 2015
+      jogos_treino: 3420
+      treino_termina: '2014-12-07'
+      teste_comeca: '2015-05-09'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.52105263
+        f1_macro: 0.25987842
+        log_loss: 1.00838904
+        brier: 0.60401006
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[5, 0, 84], [4, 0, 87], [7, 0, 193]]
+        classes:
+          H: {precisao: 0.53021978, recall: 0.96500000, f1: 0.68439716}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.31250000, recall: 0.05617978, f1: 0.09523810}
+      B:
+        acuracia: 0.52105263
+        f1_macro: 0.25987842
+        log_loss: 1.00919762
+        brier: 0.60469222
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[5, 0, 84], [4, 0, 87], [7, 0, 193]]
+        classes:
+          H: {precisao: 0.53021978, recall: 0.96500000, f1: 0.68439716}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.31250000, recall: 0.05617978, f1: 0.09523810}
+      C:
+        acuracia: 0.51052632
+        f1_macro: 0.27464760
+        log_loss: 1.00536219
+        brier: 0.60202535
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[9, 0, 80], [8, 0, 83], [15, 0, 185]]
+        classes:
+          H: {precisao: 0.53160920, recall: 0.92500000, f1: 0.67518248}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.28125000, recall: 0.10112360, f1: 0.14876033}
+    - ano: 2017
+      jogos_treino: 3800
+      treino_termina: '2015-12-06'
+      teste_comeca: '2017-05-13'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.43157895
+        f1_macro: 0.22183459
+        log_loss: 1.07160757
+        brier: 0.64858940
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 106], [4, 0, 99], [7, 0, 160]]
+        classes:
+          H: {precisao: 0.43835616, recall: 0.95808383, f1: 0.60150376}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.26666667, recall: 0.03636364, f1: 0.06400000}
+      B:
+        acuracia: 0.43157895
+        f1_macro: 0.22183459
+        log_loss: 1.07156710
+        brier: 0.64840355
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[4, 0, 106], [4, 0, 99], [7, 0, 160]]
+        classes:
+          H: {precisao: 0.43835616, recall: 0.95808383, f1: 0.60150376}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.26666667, recall: 0.03636364, f1: 0.06400000}
+      C:
+        acuracia: 0.45526316
+        f1_macro: 0.27822372
+        log_loss: 1.07259048
+        brier: 0.64838393
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[16, 0, 94], [7, 0, 96], [10, 0, 157]]
+        classes:
+          H: {precisao: 0.45244957, recall: 0.94011976, f1: 0.61089494}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.48484848, recall: 0.14545455, f1: 0.22377622}
+    - ano: 2018
+      jogos_treino: 4180
+      treino_termina: '2017-12-03'
+      teste_comeca: '2018-04-14'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.53947368
+        f1_macro: 0.28790575
+        log_loss: 0.99455875
+        brier: 0.59377329
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[7, 0, 61], [9, 0, 101], [4, 0, 198]]
+        classes:
+          H: {precisao: 0.55000000, recall: 0.98019802, f1: 0.70462633}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.35000000, recall: 0.10294118, f1: 0.15909091}
+      B:
+        acuracia: 0.53947368
+        f1_macro: 0.28772857
+        log_loss: 0.99262586
+        brier: 0.59293676
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[7, 0, 61], [10, 0, 100], [4, 0, 198]]
+        classes:
+          H: {precisao: 0.55153203, recall: 0.98019802, f1: 0.70588235}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.33333333, recall: 0.10294118, f1: 0.15730337}
+      C:
+        acuracia: 0.52894737
+        f1_macro: 0.30225717
+        log_loss: 0.99942704
+        brier: 0.59664723
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[11, 0, 57], [14, 0, 96], [12, 0, 190]]
+        classes:
+          H: {precisao: 0.55393586, recall: 0.94059406, f1: 0.69724771}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.29729730, recall: 0.16176471, f1: 0.20952381}
+    - ano: 2019
+      jogos_treino: 4560
+      treino_termina: '2018-12-02'
+      teste_comeca: '2019-04-27'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.49210526
+        f1_macro: 0.27710653
+        log_loss: 1.02278326
+        brier: 0.61388850
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[11, 0, 87], [9, 0, 89], [8, 0, 176]]
+        classes:
+          H: {precisao: 0.50000000, recall: 0.95652174, f1: 0.65671642}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.39285714, recall: 0.11224490, f1: 0.17460317}
+      B:
+        acuracia: 0.49210526
+        f1_macro: 0.27710653
+        log_loss: 1.02267500
+        brier: 0.61382707
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[11, 0, 87], [9, 0, 89], [8, 0, 176]]
+        classes:
+          H: {precisao: 0.50000000, recall: 0.95652174, f1: 0.65671642}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.39285714, recall: 0.11224490, f1: 0.17460317}
+      C:
+        acuracia: 0.48947368
+        f1_macro: 0.30293922
+        log_loss: 1.00095350
+        brier: 0.59806700
+        empates_corretos_previstos: '0/1'
+        matriz_confusao_ADH: [[19, 1, 78], [12, 0, 86], [17, 0, 167]]
+        classes:
+          H: {precisao: 0.50453172, recall: 0.90760870, f1: 0.64854369}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.39583333, recall: 0.19387755, f1: 0.26027397}
+    - ano: 2020
+      jogos_treino: 4940
+      treino_termina: '2019-12-08'
+      teste_comeca: '2020-08-08'
+      meia_vida_C_dias: 180
+      A:
+        acuracia: 0.44473684
+        f1_macro: 0.21920570
+        log_loss: 1.05137568
+        brier: 0.63522884
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[2, 0, 99], [9, 0, 99], [4, 0, 167]]
+        classes:
+          H: {precisao: 0.45753425, recall: 0.97660819, f1: 0.62313433}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.13333333, recall: 0.01980198, f1: 0.03448276}
+      B:
+        acuracia: 0.44473684
+        f1_macro: 0.21920570
+        log_loss: 1.05061285
+        brier: 0.63479831
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[2, 0, 99], [9, 0, 99], [4, 0, 167]]
+        classes:
+          H: {precisao: 0.45753425, recall: 0.97660819, f1: 0.62313433}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.13333333, recall: 0.01980198, f1: 0.03448276}
+      C:
+        acuracia: 0.45789474
+        f1_macro: 0.32371937
+        log_loss: 1.06028980
+        brier: 0.63964450
+        empates_corretos_previstos: '1/2'
+        matriz_confusao_ADH: [[32, 1, 68], [21, 1, 86], [30, 0, 141]]
+        classes:
+          H: {precisao: 0.47796610, recall: 0.82456140, f1: 0.60515021}
+          D: {precisao: 0.50000000, recall: 0.00925926, f1: 0.01818182}
+          A: {precisao: 0.38554217, recall: 0.31683168, f1: 0.34782609}
+    - ano: 2021
+      jogos_treino: 5320
+      treino_termina: '2021-02-25'
+      teste_comeca: '2021-05-29'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.43421053
+        f1_macro: 0.26195315
+        log_loss: 1.06208592
+        brier: 0.64293398
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[13, 0, 80], [9, 0, 104], [22, 0, 152]]
+        classes:
+          H: {precisao: 0.45238095, recall: 0.87356322, f1: 0.59607843}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.29545455, recall: 0.13978495, f1: 0.18978102}
+      B:
+        acuracia: 0.43421053
+        f1_macro: 0.26182519
+        log_loss: 1.06101678
+        brier: 0.64225237
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[13, 0, 80], [11, 0, 102], [22, 0, 152]]
+        classes:
+          H: {precisao: 0.45508982, recall: 0.87356322, f1: 0.59842520}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.28260870, recall: 0.13978495, f1: 0.18705036}
+      C:
+        acuracia: 0.45000000
+        f1_macro: 0.30801793
+        log_loss: 1.05393865
+        brier: 0.63701140
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[27, 0, 66], [16, 0, 97], [30, 0, 144]]
+        classes:
+          H: {precisao: 0.46905537, recall: 0.82758621, f1: 0.59875260}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.36986301, recall: 0.29032258, f1: 0.32530120}
+    - ano: 2022
+      jogos_treino: 5700
+      treino_termina: '2021-12-09'
+      teste_comeca: '2022-04-09'
+      meia_vida_C_dias: 180
+      A:
+        acuracia: 0.47105263
+        f1_macro: 0.27903512
+        log_loss: 1.04170111
+        brier: 0.62599660
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[13, 0, 91], [8, 0, 100], [2, 0, 166]]
+        classes:
+          H: {precisao: 0.46498599, recall: 0.98809524, f1: 0.63238095}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.56521739, recall: 0.12500000, f1: 0.20472441}
+      B:
+        acuracia: 0.46842105
+        f1_macro: 0.27388497
+        log_loss: 1.04101076
+        brier: 0.62552832
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[12, 0, 92], [8, 0, 100], [2, 0, 166]]
+        classes:
+          H: {precisao: 0.46368715, recall: 0.98809524, f1: 0.63117871}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.54545455, recall: 0.11538462, f1: 0.19047619}
+      C:
+        acuracia: 0.44473684
+        f1_macro: 0.31491631
+        log_loss: 1.07333163
+        brier: 0.64237913
+        empates_corretos_previstos: '0/2'
+        matriz_confusao_ADH: [[35, 1, 68], [30, 0, 78], [33, 1, 134]]
+        classes:
+          H: {precisao: 0.47857143, recall: 0.79761905, f1: 0.59821429}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.35714286, recall: 0.33653846, f1: 0.34653465}
+    - ano: 2023
+      jogos_treino: 6080
+      treino_termina: '2022-11-13'
+      teste_comeca: '2023-04-15'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.46842105
+        f1_macro: 0.23564262
+        log_loss: 1.03967914
+        brier: 0.62473173
+        empates_corretos_previstos: '0/1'
+        matriz_confusao_ADH: [[4, 1, 99], [3, 0, 95], [4, 0, 174]]
+        classes:
+          H: {precisao: 0.47282609, recall: 0.97752809, f1: 0.63736264}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.36363636, recall: 0.03846154, f1: 0.06956522}
+      B:
+        acuracia: 0.46578947
+        f1_macro: 0.22999807
+        log_loss: 1.03992306
+        brier: 0.62486986
+        empates_corretos_previstos: '0/2'
+        matriz_confusao_ADH: [[3, 2, 99], [3, 0, 95], [4, 0, 174]]
+        classes:
+          H: {precisao: 0.47282609, recall: 0.97752809, f1: 0.63736264}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.30000000, recall: 0.02884615, f1: 0.05263158}
+      C:
+        acuracia: 0.48421053
+        f1_macro: 0.31988155
+        log_loss: 1.03109727
+        brier: 0.61743415
+        empates_corretos_previstos: '0/1'
+        matriz_confusao_ADH: [[27, 1, 76], [14, 0, 84], [21, 0, 157]]
+        classes:
+          H: {precisao: 0.49526814, recall: 0.88202247, f1: 0.63434343}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.43548387, recall: 0.25961538, f1: 0.32530120}
+    - ano: 2024
+      jogos_treino: 6460
+      treino_termina: '2023-12-06'
+      teste_comeca: '2024-04-13'
+      meia_vida_C_dias: 730
+      A:
+        acuracia: 0.47631579
+        f1_macro: 0.27062611
+        log_loss: 1.04332353
+        brier: 0.62737234
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[11, 0, 88], [11, 0, 90], [10, 0, 170]]
+        classes:
+          H: {precisao: 0.48850575, recall: 0.94444444, f1: 0.64393939}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.34375000, recall: 0.11111111, f1: 0.16793893}
+      B:
+        acuracia: 0.47631579
+        f1_macro: 0.27062611
+        log_loss: 1.04329635
+        brier: 0.62729988
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[11, 0, 88], [11, 0, 90], [10, 0, 170]]
+        classes:
+          H: {precisao: 0.48850575, recall: 0.94444444, f1: 0.64393939}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.34375000, recall: 0.11111111, f1: 0.16793893}
+      C:
+        acuracia: 0.47631579
+        f1_macro: 0.32338550
+        log_loss: 1.03960069
+        brier: 0.62436951
+        empates_corretos_previstos: '0/0'
+        matriz_confusao_ADH: [[31, 0, 68], [21, 0, 80], [30, 0, 150]]
+        classes:
+          H: {precisao: 0.50335570, recall: 0.83333333, f1: 0.62761506}
+          D: {precisao: 0.00000000, recall: 0.00000000, f1: 0.00000000}
+          A: {precisao: 0.37804878, recall: 0.31313131, f1: 0.34254144}
+  conclusao: >-
+    Dixon-Coles B quase não alterou as decisões da variante A: acurácia, F1 macro e Brier ficaram
+    praticamente iguais; log loss melhorou em média apenas 0,0009. As variantes A e B previram
+    respectivamente 1 e 3 empates nos 5.320 jogos, com 0 e 1 acertos. C elevou F1 macro médio
+    de 0,253 para 0,287 e recall de visitante de 0,071 para 0,175, mas reduziu recall do mandante
+    de 0,962 para 0,905. Não melhorou de forma consistente log loss ou Brier e reconheceu somente
+    2 dos 1.458 empates reais (2/8 previsões). O ganho de F1 de C veio principalmente da classe A,
+    não da classe D. Os resultados não confirmam melhora consistente na previsão de empates.
+    As 14 temporadas incluem 2010–2015 e 2017–2024; 2016 foi excluída por incompletude.
+    Desvios são descritivos e não intervalos de confiança: folds sequenciais compartilham dados de treino.
+    O artefato local preserva métricas completas, parâmetros e probabilidades por fold.
+
 estado_atual:
   entregue:
     - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -277,6 +930,7 @@ estado_atual:
     - Primeiro modelo treinado e comparado com uma referência simples.
     - Diagnóstico de erros de 2023 e previsões retrospectivas de 2024 gerados localmente.
     - Experimento de empates reproduzível, sem trocar o modelo principal.
+    - Ablation Poisson/Dixon-Coles/decaimento com 14 folds walk-forward e gráfico de calibração.
   limites:
     - O ganho de acurácia em 2024 foi pequeno, de 47,4% para 48,2%.
     - O modelo previu vitória do mandante em 323 dos 380 jogos de 2024.
@@ -286,10 +940,11 @@ estado_atual:
     - A regra de até cinco empates por rodada aumentou a revocação de D, mas reduziu acertos em H e A.
     - Incluir todos os anos desde 2006 reduziu o F1 macro médio em 2018–2022 e não corrigiu empates.
     - Pesos maiores para anos recentes elevaram o F1 médio de 2018–2022, mas não sustentaram melhora em 2023 e 2024.
+    - No Dixon-Coles, o decaimento elevou F1 macro principalmente por vitórias visitantes; a recuperação de empates permaneceu residual.
     - Ainda não há fluxo para montar features de uma partida futura.
     - A fonte processada cobre apenas até a temporada de 2024.
   proximos_passos:
-    - Investigar força dos clubes entre temporadas, regras de decisão e correção de placares baixos com novas validações temporais.
+    - Investigar força dos clubes entre temporadas e variáveis que diferenciem empates com novas validações temporais.
     - Reunir uma temporada nova para confirmar se a melhora em empates se repete.
     - Atualizar a fonte de dados e gerar features para partidas não disputadas.
     - Criar uma interface somente após validar o fluxo de previsão futura.
@@ -304,3 +959,4 @@ fontes:
   - 'src/model/experiment_round_draws.py e artifacts/round_draw_experiment.json, gerado localmente.'
   - 'src/model/experiment_long_history.py e artifacts/long_history_experiment.json, gerado localmente.'
   - 'Pesos por recência medidos no mesmo artifacts/long_history_experiment.json, gerado localmente.'
+  - 'src/model/experiment_dixon_coles.py e artifacts/dixon_coles_experiment.json, gerado localmente.'
