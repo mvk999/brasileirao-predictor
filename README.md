@@ -49,6 +49,12 @@ Para investigar se aprender com mais anos ajuda, a mesma regressão foi ajustada
 
 Em 2023, o treino com 3 temporadas teve **49,2% de acurácia, F1 macro 0,331 e 5 empates corretos**; com todos os anos disponíveis, **46,3%, F1 macro 0,243 e nenhum empate previsto**. São avaliações retrospectivas e esse recorte de 3 anos difere do modelo principal de 2024. A hipótese, o protocolo e os resultados completos estão em [`experiment_long_history.py`](src/model/experiment_long_history.py) e no relatório. O modelo principal não foi substituído.
 
+### Pesos para temporadas recentes
+
+No mesmo experimento, todas as temporadas anteriores entram no treino, mas partidas antigas recebem peso menor. Foram testadas meias-vidas de **1, 2, 4 e 8 anos**; com meia-vida de 1 ano, o peso original cai pela metade a cada ano de distância. Os pesos são normalizados para média 1 e aplicados à regressão. A escolha entre as quatro opções usou apenas a avaliação temporal de 2018–2022.
+
+Nesse período, a meia-vida de 1 ano elevou o **F1 macro médio de 0,293 para 0,304** frente à janela de 3 anos, enquanto o log loss piorou de **1,049 para 1,053**. Em 2023, ela teve **48,2% de acurácia e F1 0,328**, abaixo dos **49,2% e 0,331** da janela de 3 anos; ambas acertaram 5 empates. Em 2024, a acurácia subiu de **48,4% para 48,7%**, mas o F1 caiu de **0,340 para 0,334** e os empates corretos de **13 para 11**. A melhora não foi consistente, então a referência principal permanece igual.
+
 Os gráficos, matrizes de confusão e a trajetória do projeto estão no [relatório de evolução](docs/EVOLUCAO.md) e no [PDF](docs/evolucao-do-projeto.pdf). As previsões jogo a jogo são arquivos gerados localmente, em `data/processed/`.
 
 ## How it works
@@ -93,6 +99,8 @@ Os dados brutos e processados ficam em `data/raw/` e `data/processed/`, ignorado
 
 **Treino com mais anos.** O experimento de histórico longo refaz o ajuste da regressão para cada ano avaliado, usando somente temporadas anteriores. Os 12 atributos continuam sendo médias dos últimos cinco jogos do clube **naquela temporada**, calculadas antes de cada partida. O script [`build_features.py`](src/data/build_features.py) reproduz os atributos do notebook de 2020–2024, permitindo aplicar o mesmo processo aos anos antigos. Isso é aprendizado supervisionado com readequação periódica: o modelo aprende relações entre atributos e resultados conhecidos. Não é uma LLM nem memoriza continuamente cada jogo após a previsão.
 
+**Pesos por recência.** A fórmula experimental é `peso = 0,5 ** (idade_em_anos / meia_vida)`, onde o ano imediatamente anterior tem idade zero. Depois os pesos são divididos pela sua média, mantendo peso médio 1. Eles atuam no ajuste da regressão; a imputação e a padronização anteriores ao ajuste continuam sem pesos. A combinação escolhida no período 2018–2022 é observada em 2023 e 2024, temporadas já examinadas pelo projeto.
+
 Na regra por rodada, todas as dez partidas usam um retrato do histórico disponível **antes do primeiro jogo da rodada**. Isso impede que o resultado de um jogo da rodada influencie a decisão para outro. As taxas calculadas com placares passados não são **xG de finalizações**: xG, no sentido usual, estima a chance de cada finalização virar gol a partir de suas características, como explica a [StatsBomb](https://statsbomb.com/soccer-metrics/expected-goals-xg-explained/). Esta base não contém esses eventos.
 
 ## Technical Decisions
@@ -107,6 +115,7 @@ Na regra por rodada, todas as dez partidas usam um retrato do histórico dispon�
 | Testar o teto de cinco empates como hipótese | Medir a regra sugerida sem consultar o resultado real ao escolher empates | A rodada 10 de 2023 teve seis empates reais; o teto impede reconhecer todos |
 | Manter experimentos em scripts separados | Preservar uma referência reproduzível enquanto novas hipóteses são avaliadas | Resultados experimentais ainda exigem confirmação |
 | Comparar janelas de 3, 5, 10 anos e histórico completo | Medir o efeito de dados antigos antes de incorporá-los ao modelo principal | Mais anos reduziram o log loss médio, mas pioraram o F1 macro |
+| Dar pesos menores a temporadas antigas | Aproveitar dados passados sem pressupor que têm a mesma relevância dos recentes | O ganho médio em F1 de 2018–2022 não se repetiu de forma consistente em 2023 e 2024 |
 
 ## Technologies
 
@@ -173,7 +182,7 @@ python -m pytest -q
 python docs/build_report.py
 ```
 
-A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O experimento por rodada mostra `Limite escolhido em 2022: 0.20 gol; teto: 5 empates/rodada`. O experimento histórico termina com `Partidas: 6840 | Temporadas completas: 18 | Features: 12` e `Melhor F1 macro médio em 2018–2022: recent_3`. Ele salva CSV e JSON locais ignorados pelo Git. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
+A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O experimento por rodada mostra `Limite escolhido em 2022: 0.20 gol; teto: 5 empates/rodada`. O experimento histórico termina com `Partidas: 6840 | Temporadas completas: 18 | Features: 12` e `Melhor F1 macro médio em 2018–2022: weighted_hl_1`. Ele salva CSV e JSON locais ignorados pelo Git. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
 
 ## Evaluation
 
@@ -193,6 +202,7 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 - Os atributos cobrem forma recente e gols, mas não capturam escalações, lesões, contexto tático ou outras condições da partida.
 - Há somente cinco temporadas no recorte atual; mudanças de elenco e clubes promovidos dificultam extrapolar forças entre anos.
 - O histórico longo exclui temporadas ausentes, com formato diferente ou incompletas; os atributos reiniciam a cada temporada e não representam força acumulada entre anos.
+- Os pesos por recência afetam a regressão, mas não a imputação e a padronização. O melhor resultado médio de 2018–2022 não foi uma melhora consistente nas temporadas posteriores já examinadas.
 - As análises de 2023 e 2024 já influenciaram a investigação. Uma nova temporada é necessária para uma confirmação mais independente.
 - O projeto ainda não possui rotina de atualização automática, entrada para jogos não disputados, API ou interface de usuário.
 - Os resultados são estudos retrospectivos e não constituem recomendação de aposta.
@@ -202,7 +212,7 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 1. Obter e validar temporadas posteriores a 2024 para uma avaliação mais independente.
 2. Investigar calibração das probabilidades, regras de decisão e a correção de placares baixos de Dixon–Coles, sem assumir que melhorarão empates.
 3. Testar atributos anteriores ao jogo que representem força dos times e contexto de forma verificável.
-4. Investigar pesos temporais para aproveitar jogos antigos sem lhes dar o mesmo peso que aos recentes, usando validação por temporada.
+4. Investigar se uma medida de força dos clubes entre temporadas melhora o reconhecimento das três classes, usando validação por temporada.
 5. Automatizar a atualização da fonte e criar um fluxo seguro para montar atributos de partidas futuras.
 6. Considerar API ou interface visual após validar esse fluxo e os resultados fora da amostra.
 
@@ -213,6 +223,8 @@ Ao construir este projeto, aprendi a tratar uma data de calendário e uma tempor
 A comparação por classe mostrou que **acurácia sozinha é insuficiente**. Os experimentos com empates e gols reforçaram outra distinção: um modelo pode atribuir probabilidades melhores aos resultados e ainda tomar decisões piores quando precisa escolher uma única classe. Registrar resultados negativos e preservar a referência torna a evolução do projeto verificável.
 
 Ao ampliar o histórico, aprendi a verificar se cada temporada tem o mesmo formato e a comparar janelas de treino antes de presumir que mais dados sempre ajudam. Um ajuste com todos os anos anteriores reduziu a perda probabilística média, mas reconheceu menos empates; isso mostra que a escolha de dados de treino também é uma decisão de modelagem.
+
+O teste de pesos reforçou a diferença entre encontrar o melhor parâmetro em anos passados e observar se o ganho aparece depois. A meia-vida de um ano ganhou no F1 médio de 2018–2022, mas não sustentou melhora simultânea em acurácia, F1 e empates nas análises retrospectivas de 2023 e 2024.
 
 ## Author
 

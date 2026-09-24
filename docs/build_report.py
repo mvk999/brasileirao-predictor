@@ -255,6 +255,31 @@ def verify_local_long_history_experiment(data: dict) -> None:
                     raise ValueError(f"Empates diferem em {section}/{strategy}.")
 
 
+def verify_local_recency_experiment(data: dict) -> None:
+    path = ROOT / "artifacts/long_history_experiment.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))
+    recorded = data["experimento_pesos_recencia"]
+    for section in ("metricas_medias_2018_2022", "validacao_2023", "avaliacao_2024"):
+        for strategy, row in recorded[section].items():
+            if section == "metricas_medias_2018_2022":
+                actual = measured["backtest_average"][strategy]
+            else:
+                actual = measured["retrospective"][section[-4:]][strategy]
+            for documented, generated in (("acuracia", "accuracy"), ("f1_macro", "f1_macro"),
+                                          ("log_loss", "log_loss")):
+                if abs(row[documented] - actual[generated]) > 0.000001:
+                    raise ValueError(f"Pesos por recência desatualizados em {section}/{strategy}/{documented}.")
+            if "empates_corretos" in row:
+                if (row["empates_corretos"] != actual["by_class"]["D"]["correct"]
+                        or row["empates_previstos"] != actual["by_class"]["D"]["predicted"]):
+                    raise ValueError(f"Empates diferem em {section}/{strategy}.")
+                for label, field in (("H", "h_corretos"), ("A", "a_corretos")):
+                    if row[field] != actual["by_class"][label]["correct"]:
+                        raise ValueError(f"Acertos de {label} diferem em {section}/{strategy}.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
@@ -512,7 +537,36 @@ def make_markdown(data: dict) -> str:
                 f"{decimal(row['f1_macro'])} | {decimal(row['log_loss'])} | "
                 f"{row['empates_corretos']}/{row['empates_previstos']} |"
             )
-    lines += ["", "**Conclusão:** " + long_history["conclusao"], "", "## O que existe hoje", ""]
+    recency = data["experimento_pesos_recencia"]
+    lines += [
+        "", "**Conclusão:** " + long_history["conclusao"],
+        "", "## Experimento: mais peso para temporadas recentes", "",
+        recency["protocolo"], "",
+        "| Treino | Acurácia média 2018–2022 | F1 macro médio | Log loss médio |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for key, name in (("recent_3", "3 temporadas"), ("all", "Todos, peso igual"),
+                      ("weighted_hl_1", "Meia-vida 1 ano"), ("weighted_hl_2", "Meia-vida 2 anos"),
+                      ("weighted_hl_4", "Meia-vida 4 anos"), ("weighted_hl_8", "Meia-vida 8 anos")):
+        row = recency["metricas_medias_2018_2022"][key]
+        lines.append(
+            f"| {name} | {percentage(row['acuracia'])} | "
+            f"{decimal(row['f1_macro'])} | {decimal(row['log_loss'])} |"
+        )
+    lines += [
+        "", "| Ano | Treino | Acurácia | F1 macro | Log loss | D corretos / previstos | H corretos | A corretos |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for year, section in ((2023, "validacao_2023"), (2024, "avaliacao_2024")):
+        for key, name in (("recent_3", "3 temporadas"), ("weighted_hl_1", "Meia-vida 1 ano")):
+            row = recency[section][key]
+            lines.append(
+                f"| {year} | {name} | {percentage(row['acuracia'])} | "
+                f"{decimal(row['f1_macro'])} | {decimal(row['log_loss'])} | "
+                f"{row['empates_corretos']}/{row['empates_previstos']} | "
+                f"{row['h_corretos']} | {row['a_corretos']} |"
+            )
+    lines += ["", "**Conclusão:** " + recency["conclusao"], "", "## O que existe hoje", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["limites"]]
@@ -1027,6 +1081,40 @@ def long_history_page(data: dict, number: int, total: int):
     return fig
 
 
+def recency_page(data: dict, number: int, total: int):
+    fig = page("Dar mais peso ao passado recente ajuda?", "Pesos por recência", number, total)
+    experiment = data["experimento_pesos_recencia"]
+    rows = experiment["metricas_medias_2018_2022"]
+    keys = ("recent_3", "all", "weighted_hl_1", "weighted_hl_2", "weighted_hl_4", "weighted_hl_8")
+    names = ("3 anos", "Todos", "½ 1 ano", "½ 2 anos", "½ 4 anos", "½ 8 anos")
+
+    box(fig, 0.06, 0.43, 0.88, 0.38)
+    label(fig, 0.085, 0.77, "F1 MACRO MÉDIO · 2018–2022", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.115, 0.51, 0.78, 0.21], facecolor=WHITE)
+    ax.set_zorder(3)
+    values = [rows[key]["f1_macro"] for key in keys]
+    ax.bar(range(len(keys)), values, color=["#8AC3C0", "#B5C7CF", TEAL, "#8AC3C0", "#A5D0CE", "#B5C7CF"])
+    ax.set_xticks(range(len(keys)), names)
+    ax.set_ylim(0, 0.38)
+    ax.set_yticks([0, 0.1, 0.2, 0.3])
+    ax.tick_params(labelsize=8, length=0)
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    for i, value in enumerate(values):
+        ax.text(i, value + 0.009, decimal(value), ha="center", size=8, color=INK)
+    label(fig, 0.085, 0.46, "½ = meia-vida; anos mais antigos têm menos peso no ajuste.", size=8, color=MUTED)
+
+    box(fig, 0.06, 0.15, 0.88, 0.23, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.34, "O QUE ACONTECEU DEPOIS", size=10, color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.295,
+            "A meia-vida de um ano venceu no F1 médio de 2018–2022 (0,304 contra 0,293 com três anos), "
+            "mas piorou o log loss. Em 2023, acurácia e F1 ficaram menores. Em 2024, a acurácia subiu "
+            "de 48,4% para 48,7%, mas os empates corretos caíram de 13 para 11. "
+            "A melhora não foi consistente; o modelo principal permanece igual.",
+            116, size=9, color=INK)
+    return fig
+
+
 def next_page(data: dict, number: int, total: int):
     fig = page("O que falta e como acompanhar", "Próxima edição", number, total)
     current = data["estado_atual"]
@@ -1058,7 +1146,7 @@ def next_page(data: dict, number: int, total: int):
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
     history_chunks = [milestones[i : i + 6] for i in range(0, len(milestones), 6)] or [[]]
-    total_pages = 10 + len(history_chunks)
+    total_pages = 11 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -1066,14 +1154,15 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 8, total_pages),
-            model_page(data, total_pages - 7, total_pages),
-            validation_page(data, total_pages - 6, total_pages),
-            confidence_page(data, total_pages - 5, total_pages),
-            draw_experiment_page(data, total_pages - 4, total_pages),
-            poisson_page(data, total_pages - 3, total_pages),
-            round_rule_page(data, total_pages - 2, total_pages),
-            long_history_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 9, total_pages),
+            model_page(data, total_pages - 8, total_pages),
+            validation_page(data, total_pages - 7, total_pages),
+            confidence_page(data, total_pages - 6, total_pages),
+            draw_experiment_page(data, total_pages - 5, total_pages),
+            poisson_page(data, total_pages - 4, total_pages),
+            round_rule_page(data, total_pages - 3, total_pages),
+            long_history_page(data, total_pages - 2, total_pages),
+            recency_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -1093,6 +1182,7 @@ def main() -> None:
     verify_local_poisson_experiment(data)
     verify_local_round_experiment(data)
     verify_local_long_history_experiment(data)
+    verify_local_recency_experiment(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")

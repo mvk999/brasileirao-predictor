@@ -1,7 +1,7 @@
 titulo: Brasileirão Predictor
-edicao: 6
+edicao: 7
 atualizado_em: 2026-09-24
-subtitulo: Da ideia inicial à comparação de horizontes de treino
+subtitulo: Da ideia inicial ao teste de pesos por recência
 
 origem:
   data: 2026-07-25
@@ -66,6 +66,11 @@ marcos:
   - data: 2026-09-24
     titulo: Histórico longo e treino temporal
     detalhe: 18 temporadas completas e quatro janelas de treino comparadas ano a ano.
+    evidencia: experiment_long_history.py
+    fase: Experimento
+  - data: 2026-09-24
+    titulo: Pesos por recência
+    detalhe: Quatro meias-vidas testadas no histórico longo; a melhora média não se repetiu em 2023 e 2024.
     evidencia: experiment_long_history.py
     fase: Experimento
 
@@ -236,6 +241,35 @@ experimento_historico_longo:
     o treino principal por todo o histórico. 2023 e 2024 já haviam sido
     inspecionados; falta uma temporada nova para confirmação independente.
 
+experimento_pesos_recencia:
+  protocolo: >-
+    Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos.
+    Cada partida anterior ao ano avaliado recebeu peso proporcional a
+    0,5 elevado à idade em anos dividida pela meia-vida; os pesos foram
+    normalizados para média 1 e aplicados à regressão logística. As meias-vidas
+    de 1, 2, 4 e 8 anos foram comparadas no teste temporal de 2018–2022.
+    2023 e 2024 serviram somente para leitura retrospectiva do resultado.
+  metricas_medias_2018_2022:
+    recent_3: {acuracia: 0.48, f1_macro: 0.2925000679, log_loss: 1.0492096328}
+    all: {acuracia: 0.47, f1_macro: 0.2368760955, log_loss: 1.0386149504}
+    weighted_hl_1: {acuracia: 0.4810526316, f1_macro: 0.304360, log_loss: 1.052921}
+    weighted_hl_2: {acuracia: 0.4810526316, f1_macro: 0.279703, log_loss: 1.044229}
+    weighted_hl_4: {acuracia: 0.4710526316, f1_macro: 0.248906, log_loss: 1.040208}
+    weighted_hl_8: {acuracia: 0.4710526316, f1_macro: 0.243637, log_loss: 1.038980}
+  validacao_2023:
+    recent_3: {acuracia: 0.4921052632, f1_macro: 0.3311164757, log_loss: 1.0568007836, empates_corretos: 5, empates_previstos: 7, h_corretos: 163, a_corretos: 19}
+    weighted_hl_1: {acuracia: 0.4815789474, f1_macro: 0.328363, log_loss: 1.057892, empates_corretos: 5, empates_previstos: 11, h_corretos: 158, a_corretos: 20}
+  avaliacao_2024:
+    recent_3: {acuracia: 0.4842105263, f1_macro: 0.3398252639, log_loss: 1.0277097891, empates_corretos: 13, empates_previstos: 33, h_corretos: 159, a_corretos: 12}
+    weighted_hl_1: {acuracia: 0.4868421053, f1_macro: 0.334013, log_loss: 1.031079, empates_corretos: 11, empates_previstos: 22, h_corretos: 162, a_corretos: 12}
+  conclusao: >-
+    Meia-vida de um ano foi a melhor entre as quatro no F1 macro médio de
+    2018–2022 (0,304 ante 0,293 com três temporadas recentes), mas o log loss
+    médio piorou. Em 2023, o F1 e a acurácia ficaram abaixo da janela de três
+    anos; em 2024, a acurácia subiu de 48,4% para 48,7%, mas F1 e empates
+    corretos caíram. Não há ganho consistente para substituir o modelo
+    principal. 2023 e 2024 já haviam sido inspecionados.
+
 estado_atual:
   entregue:
     - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -251,10 +285,11 @@ estado_atual:
     - O Poisson independente não previu nenhum empate pela regra de maior probabilidade em 2023.
     - A regra de até cinco empates por rodada aumentou a revocação de D, mas reduziu acertos em H e A.
     - Incluir todos os anos desde 2006 reduziu o F1 macro médio em 2018–2022 e não corrigiu empates.
+    - Pesos maiores para anos recentes elevaram o F1 médio de 2018–2022, mas não sustentaram melhora em 2023 e 2024.
     - Ainda não há fluxo para montar features de uma partida futura.
     - A fonte processada cobre apenas até a temporada de 2024.
   proximos_passos:
-    - Investigar recência, regras de decisão e correção de placares baixos com novas validações temporais.
+    - Investigar força dos clubes entre temporadas, regras de decisão e correção de placares baixos com novas validações temporais.
     - Reunir uma temporada nova para confirmar se a melhora em empates se repete.
     - Atualizar a fonte de dados e gerar features para partidas não disputadas.
     - Criar uma interface somente após validar o fluxo de previsão futura.
@@ -268,3 +303,4 @@ fontes:
   - 'src/model/experiment_poisson.py e artifacts/poisson_experiment.json, gerado localmente.'
   - 'src/model/experiment_round_draws.py e artifacts/round_draw_experiment.json, gerado localmente.'
   - 'src/model/experiment_long_history.py e artifacts/long_history_experiment.json, gerado localmente.'
+  - 'Pesos por recência medidos no mesmo artifacts/long_history_experiment.json, gerado localmente.'

@@ -1,9 +1,11 @@
 """Confere atributos históricos e o recorte configurável de temporadas."""
 
+import numpy as np
 import pandas as pd
 
 from src.data.build_features import build_features
 from src.data.prepare_matches import prepare_matches
+from src.model.experiment_long_history import recency_weights
 
 
 def test_features_use_previous_games_and_reset_at_new_season() -> None:
@@ -45,3 +47,16 @@ def test_prepare_matches_accepts_explicit_older_season() -> None:
     older = prepare_matches(raw, seasons=(2019,))
     assert len(older) == 1
     assert older.loc[0, "temporada"] == 2019
+
+
+def test_recency_weights_half_each_year_and_keep_mean_one() -> None:
+    seasons = pd.Series([2020, 2021, 2022, 2022])
+    weights = recency_weights(seasons, prediction_year=2023, half_life=1)
+
+    np.testing.assert_allclose(weights / weights[-1], [0.25, 0.5, 1, 1])
+    assert np.isclose(weights.mean(), 1)
+
+
+def test_recency_weights_reject_future_training_year() -> None:
+    with np.testing.assert_raises(ValueError):
+        recency_weights(pd.Series([2022, 2023]), prediction_year=2023, half_life=1)

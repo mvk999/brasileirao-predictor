@@ -1,6 +1,6 @@
 # Evolução do Brasileirão Predictor
 
-**Edição 6 · Atualizado em 24/09/2026**
+**Edição 7 · Atualizado em 24/09/2026**
 
 Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos
 editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.
@@ -26,6 +26,7 @@ Evidência inicial: commit `fee7978` de 25/07/2026.
 | 23/09/2026 | Modelo de gols por Poisson | Forças de ataque e defesa estimadas sem olhar jogos futuros; comparação com o modelo de classes. | `experiment_poisson.py` |
 | 24/09/2026 | Empates por rodada | Taxas de gols próximas e teto de cinco empates testados sem consultar resultados futuros. | `experiment_round_draws.py` |
 | 24/09/2026 | Histórico longo e treino temporal | 18 temporadas completas e quatro janelas de treino comparadas ano a ano. | `experiment_long_history.py` |
+| 24/09/2026 | Pesos por recência | Quatro meias-vidas testadas no histórico longo; a melhora média não se repetiu em 2023 e 2024. | `experiment_long_history.py` |
 
 ## Estado atual dos dados
 
@@ -201,6 +202,28 @@ A base experimental contém **6.840 jogos** em **18 temporadas completas**, com 
 
 **Conclusão:** Mais temporadas reduziram o log loss médio em 2018–2022, mas pioraram acurácia e F1 macro; o treino com três temporadas teve o maior F1 médio. Em 2023, usar todo o histórico previu zero empates, ante sete previsões e cinco acertos com três temporadas. Não há evidência para substituir o treino principal por todo o histórico. 2023 e 2024 já haviam sido inspecionados; falta uma temporada nova para confirmação independente.
 
+## Experimento: mais peso para temporadas recentes
+
+Foram reutilizadas as 18 temporadas completas e os mesmos 12 atributos. Cada partida anterior ao ano avaliado recebeu peso proporcional a 0,5 elevado à idade em anos dividida pela meia-vida; os pesos foram normalizados para média 1 e aplicados à regressão logística. As meias-vidas de 1, 2, 4 e 8 anos foram comparadas no teste temporal de 2018–2022. 2023 e 2024 serviram somente para leitura retrospectiva do resultado.
+
+| Treino | Acurácia média 2018–2022 | F1 macro médio | Log loss médio |
+| --- | ---: | ---: | ---: |
+| 3 temporadas | 48,0% | 0,293 | 1,049 |
+| Todos, peso igual | 47,0% | 0,237 | 1,039 |
+| Meia-vida 1 ano | 48,1% | 0,304 | 1,053 |
+| Meia-vida 2 anos | 48,1% | 0,280 | 1,044 |
+| Meia-vida 4 anos | 47,1% | 0,249 | 1,040 |
+| Meia-vida 8 anos | 47,1% | 0,244 | 1,039 |
+
+| Ano | Treino | Acurácia | F1 macro | Log loss | D corretos / previstos | H corretos | A corretos |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2023 | 3 temporadas | 49,2% | 0,331 | 1,057 | 5/7 | 163 | 19 |
+| 2023 | Meia-vida 1 ano | 48,2% | 0,328 | 1,058 | 5/11 | 158 | 20 |
+| 2024 | 3 temporadas | 48,4% | 0,340 | 1,028 | 13/33 | 159 | 12 |
+| 2024 | Meia-vida 1 ano | 48,7% | 0,334 | 1,031 | 11/22 | 162 | 12 |
+
+**Conclusão:** Meia-vida de um ano foi a melhor entre as quatro no F1 macro médio de 2018–2022 (0,304 ante 0,293 com três temporadas recentes), mas o log loss médio piorou. Em 2023, o F1 e a acurácia ficaram abaixo da janela de três anos; em 2024, a acurácia subiu de 48,4% para 48,7%, mas F1 e empates corretos caíram. Não há ganho consistente para substituir o modelo principal. 2023 e 2024 já haviam sido inspecionados.
+
 ## O que existe hoje
 
 - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -218,12 +241,13 @@ A base experimental contém **6.840 jogos** em **18 temporadas completas**, com 
 - O Poisson independente não previu nenhum empate pela regra de maior probabilidade em 2023.
 - A regra de até cinco empates por rodada aumentou a revocação de D, mas reduziu acertos em H e A.
 - Incluir todos os anos desde 2006 reduziu o F1 macro médio em 2018–2022 e não corrigiu empates.
+- Pesos maiores para anos recentes elevaram o F1 médio de 2018–2022, mas não sustentaram melhora em 2023 e 2024.
 - Ainda não há fluxo para montar features de uma partida futura.
 - A fonte processada cobre apenas até a temporada de 2024.
 
 ## Próximas etapas
 
-1. Investigar recência, regras de decisão e correção de placares baixos com novas validações temporais.
+1. Investigar força dos clubes entre temporadas, regras de decisão e correção de placares baixos com novas validações temporais.
 2. Reunir uma temporada nova para confirmar se a melhora em empates se repete.
 3. Atualizar a fonte de dados e gerar features para partidas não disputadas.
 4. Criar uma interface somente após validar o fluxo de previsão futura.
@@ -248,3 +272,4 @@ A base experimental contém **6.840 jogos** em **18 temporadas completas**, com 
 - src/model/experiment_poisson.py e artifacts/poisson_experiment.json, gerado localmente.
 - src/model/experiment_round_draws.py e artifacts/round_draw_experiment.json, gerado localmente.
 - src/model/experiment_long_history.py e artifacts/long_history_experiment.json, gerado localmente.
+- Pesos por recência medidos no mesmo artifacts/long_history_experiment.json, gerado localmente.

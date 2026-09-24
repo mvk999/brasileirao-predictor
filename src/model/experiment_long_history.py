@@ -1,4 +1,4 @@
-"""Compara regressão treinada com três temporadas ou todo o histórico completo.
+"""Compara janelas de treino e pesos por recência em temporadas completas.
 
 Uso: python -m src.model.experiment_long_history
 """
@@ -19,7 +19,10 @@ from src.model.train_baseline import ARTIFACTS_DIR, CLASSES, FEATURE_COLUMNS, PR
 YEARS = (*range(2006, 2016), *range(2017, 2025))
 BACKTEST_YEARS = (*range(2018, 2023),)
 EVALUATION_YEARS = (2023, 2024)
-STRATEGIES = ("recent_3", "recent_5", "recent_10", "all")
+STRATEGIES = (
+    "recent_3", "recent_5", "recent_10", "all",
+    "weighted_hl_1", "weighted_hl_2", "weighted_hl_4", "weighted_hl_8",
+)
 REPORT_PATH = ARTIFACTS_DIR / "long_history_experiment.json"
 FEATURES_PATH = PROJECT_ROOT / "data/processed/matches_features_2006_2024.csv"
 CURRENT_FEATURES_PATH = PROJECT_ROOT / "data/processed/matches_features_2020_2024.csv"
@@ -52,14 +55,34 @@ def compare_existing_features(features: pd.DataFrame) -> None:
             raise ValueError(f"Atributo {name} difere do notebook.")
 
 
+def recency_weights(training_seasons: pd.Series, prediction_year: int, half_life: int) -> np.ndarray:
+    """Peso cai à metade a cada `half_life` anos; média um mantém a escala do ajuste."""
+    if half_life <= 0 or training_seasons.empty or training_seasons.ge(prediction_year).any():
+        raise ValueError("Pesos exigem meia-vida positiva e somente temporadas anteriores.")
+    age = prediction_year - 1 - training_seasons.to_numpy(dtype=int)
+    weights = np.power(0.5, age / half_life)
+    return weights / weights.mean()
+
+
 def evaluate_year(features: pd.DataFrame, year: int, strategy: str) -> dict:
     previous = sorted(set(features["temporada"]) & set(range(year)))
-    training_years = previous if strategy == "all" else previous[-int(strategy.removeprefix("recent_")):]
+    training_years = (
+        previous[-int(strategy.removeprefix("recent_")):]
+        if strategy.startswith("recent_") else previous
+    )
     train = features[features["temporada"].isin(training_years)]
     validation = features[features["temporada"] == year]
     if len(validation) != 380 or len(train) != len(training_years) * 380:
         raise ValueError(f"Dados incompletos ao avaliar {year} com {strategy}.")
-    model = make_model().fit(train.loc[:, FEATURE_COLUMNS], train["resultado"])
+    fit_options = {}
+    if strategy.startswith("weighted_hl_"):
+        half_life = int(strategy.removeprefix("weighted_hl_"))
+        fit_options["logisticregression__sample_weight"] = recency_weights(
+            train["temporada"], year, half_life
+        )
+    elif strategy != "all" and not strategy.startswith("recent_"):
+        raise ValueError(f"Estratégia desconhecida: {strategy}")
+    model = make_model().fit(train.loc[:, FEATURE_COLUMNS], train["resultado"], **fit_options)
     predictions = model.predict(validation.loc[:, FEATURE_COLUMNS])
     probabilities = model.predict_proba(validation.loc[:, FEATURE_COLUMNS])
     from sklearn.metrics import accuracy_score, f1_score, log_loss
@@ -70,6 +93,7 @@ def evaluate_year(features: pd.DataFrame, year: int, strategy: str) -> dict:
     return {
         "training_years": training_years,
         "training_games": len(train),
+        "weighting": strategy if strategy.startswith("weighted_hl_") else "uniform",
         "accuracy": float(accuracy_score(validation["resultado"], predictions)),
         "f1_macro": float(f1_score(validation["resultado"], predictions, labels=CLASSES, average="macro")),
         "log_loss": float(log_loss(validation["resultado"], probabilities, labels=CLASSES)),
@@ -103,6 +127,7 @@ def main() -> None:
         },
         "feature_count": len(FEATURE_COLUMNS),
         "feature_semantics": "últimos cinco jogos do clube dentro da mesma temporada, sem resultado atual",
+        "weighting_semantics": "meia-vida em anos; peso do ano anterior igual a 1 antes de normalizar; pesos médios iguais a 1; apenas regressão recebe sample_weight",
         "backtest": {},
         "retrospective": {},
         "strategies": list(STRATEGIES),
