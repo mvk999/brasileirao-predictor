@@ -40,6 +40,8 @@ Um limite de decisão escolhido em 2022 aumentou, em 2023, os empates corretos d
 
 Também foi avaliado um modelo de **gols por Poisson independente**. Ele estima forças de ataque e vulnerabilidade defensiva a partir de partidas anteriores e converte taxas de gols em probabilidades de `H`, `D` e `A`. Em 2023, seu log loss foi **1,033**, ante **1,057** da regressão. Porém, ao escolher a classe de maior probabilidade, ele **não previu nenhum empate** e sua acurácia foi **46,8%**. O experimento está em [`experiment_poisson.py`](src/model/experiment_poisson.py). A correção de Dixon–Coles ainda não foi implementada.
 
+Uma nova regra experimental escolhe empate quando as **taxas de gols estimadas** dos times diferem em até 0,20 gol e limita as escolhas a cinco por rodada. O limite foi escolhido em 2022. Em 2023, encontrou **30 empates em 101 previsões de empate**, mas os acertos de `H` caíram de 150 para 126 e os de `A` de 28 para 17, na comparação com o Poisson sem a regra. A acurácia caiu de 46,8% para 45,5%. A regra não entrou no modelo principal; veja [`experiment_round_draws.py`](src/model/experiment_round_draws.py).
+
 Os gráficos, matrizes de confusão e a trajetória do projeto estão no [relatório de evolução](docs/EVOLUCAO.md) e no [PDF](docs/evolucao-do-projeto.pdf). As previsões jogo a jogo são arquivos gerados localmente, em `data/processed/`.
 
 ## How it works
@@ -80,6 +82,8 @@ Os dados brutos e processados ficam em `data/raw/` e `data/processed/`, ignorado
 
 **Experimentos.** O limite de empate é escolhido em 2022 e comparado em 2023. O modelo de gols segue a ideia de forças de ataque e defesa estudada por [Maher (1982)](https://doi.org/10.1111/j.1467-9574.1982.tb00782.x): usa resultados anteriores à data de cada partida, escolhe a intensidade de regularização em 2022 e compara seu desempenho em 2023. Sua versão atual usa Poissons independentes; ela não implementa a correção de placares baixos de [Dixon e Coles (1997)](https://doi.org/10.1111/1467-9876.00065). Nenhum desses experimentos substitui o modelo principal ou constitui previsão de uma partida futura.
 
+Na regra por rodada, todas as dez partidas usam um retrato do histórico disponível **antes do primeiro jogo da rodada**. Isso impede que o resultado de um jogo da rodada influencie a decisão para outro. As taxas calculadas com placares passados não são **xG de finalizações**: xG, no sentido usual, estima a chance de cada finalização virar gol a partir de suas características, como explica a [StatsBomb](https://statsbomb.com/soccer-metrics/expected-goals-xg-explained/). Esta base não contém esses eventos.
+
 ## Technical Decisions
 
 | Decisão | Motivo | Consequência ou limite |
@@ -89,6 +93,7 @@ Os dados brutos e processados ficam em `data/raw/` e `data/processed/`, ignorado
 | Separar treino e avaliação por temporada | Respeitar a ordem em que os resultados seriam conhecidos | Há poucas temporadas para confirmar generalização |
 | Usar uma referência simples antes de modelos mais complexos | Medir o ganho real de cada abordagem | A regressão ainda tem baixo desempenho em empates |
 | Registrar métricas por classe e log loss | Expor erros que a acurácia geral esconde | Melhor probabilidade não garante melhor decisão por classe |
+| Testar o teto de cinco empates como hipótese | Medir a regra sugerida sem consultar o resultado real ao escolher empates | A rodada 10 de 2023 teve seis empates reais; o teto impede reconhecer todos |
 | Manter experimentos em scripts separados | Preservar uma referência reproduzível enquanto novas hipóteses são avaliadas | Resultados experimentais ainda exigem confirmação |
 
 ## Technologies
@@ -111,7 +116,8 @@ brasileirao-predictor/
 │   └── model/
 │       ├── train_baseline.py         # referência, treino e avaliação
 │       ├── experiment_draws.py       # limites e sinais de equilíbrio
-│       └── experiment_poisson.py     # modelo experimental de gols
+│       ├── experiment_poisson.py     # modelo experimental de gols
+│       └── experiment_round_draws.py # regra de empate por rodada
 ├── notebooks/
 │   ├── 01_data_understanding.ipynb   # exploração da fonte
 │   └── 02_feature_engineering.ipynb  # atributos históricos por partida
@@ -146,11 +152,12 @@ No JupyterLab, execute `notebooks/02_feature_engineering.ipynb` em ordem para ge
 python src/model/train_baseline.py
 python -m src.model.experiment_draws
 python -m src.model.experiment_poisson
+python -m src.model.experiment_round_draws
 python -m pytest -q
 python docs/build_report.py
 ```
 
-A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
+A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O experimento por rodada mostra `Limite escolhido em 2022: 0.20 gol; teto: 5 empates/rodada`. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
 
 ## Evaluation
 
@@ -166,6 +173,7 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 
 - O desempenho atual é limitado: a regressão acertou 48,2% das partidas de 2024, apenas três jogos a mais que a referência simples.
 - Em 2023, a regressão reconheceu 5 dos 98 empates; o Poisson independente, pela regra de maior probabilidade, não previu nenhum.
+- A regra de taxas próximas reconheceu mais empates, mas reduziu os acertos de `H` e `A`; o teto de cinco não vem de uma propriedade estatística demonstrada.
 - Os atributos cobrem forma recente e gols, mas não capturam escalações, lesões, contexto tático ou outras condições da partida.
 - Há somente cinco temporadas no recorte atual; mudanças de elenco e clubes promovidos dificultam extrapolar forças entre anos.
 - As análises de 2023 e 2024 já influenciaram a investigação. Uma nova temporada é necessária para uma confirmação mais independente.

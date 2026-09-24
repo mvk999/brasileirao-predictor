@@ -1,6 +1,6 @@
 # Evolução do Brasileirão Predictor
 
-**Edição 4 · Atualizado em 23/09/2026**
+**Edição 5 · Atualizado em 24/09/2026**
 
 Este é o registro cronológico do projeto. `evolucao.yaml` contém os fatos
 editáveis; `EVOLUCAO.md` e `evolucao-do-projeto.pdf` são gerados a partir dele.
@@ -24,6 +24,7 @@ Evidência inicial: commit `fee7978` de 25/07/2026.
 | 23/09/2026 | Erros de 2023 analisados | Matriz de confusão, métricas por classe, faixas de confiança e exemplos de erros. | `3066650` |
 | 23/09/2026 | Experimento com empates | Limites de decisão e três sinais de equilíbrio comparados com validação temporal. | `experiment_draws.py` |
 | 23/09/2026 | Modelo de gols por Poisson | Forças de ataque e defesa estimadas sem olhar jogos futuros; comparação com o modelo de classes. | `experiment_poisson.py` |
+| 24/09/2026 | Empates por rodada | Taxas de gols próximas e teto de cinco empates testados sem consultar resultados futuros. | `experiment_round_draws.py` |
 
 ## Estado atual dos dados
 
@@ -161,6 +162,20 @@ Poisson independente para gols da casa e de fora, com vantagem de mando embutida
 
 **Conclusão:** A probabilidade média de empate do Poisson em 2023 ficou próxima da frequência real, mas empate nunca foi a classe mais provável. O log loss melhorou; acurácia, F1 macro e acertos de mandante pioraram. O modelo principal não foi substituído. A melhoria de empate sem perda de H e A ainda não foi demonstrada.
 
+## Experimento: até cinco empates por rodada
+
+Todas as partidas de uma rodada usam somente jogos anteriores à data do primeiro jogo da rodada. A diferença máxima entre taxas de gols foi escolhida em 2022 pelo maior F1 macro; o prior de cinco jogos já havia sido escolhido em 2022 no experimento Poisson. Entre os jogos elegíveis, no máximo cinco com menor diferença recebem a classe D; os demais recebem H ou A conforme a maior taxa de gols. A avaliação usa 2023, sem 2024.
+
+As taxas de gols vêm de placares históricos; elas não são xG de finalizações.
+A diferença escolhida em 2022 foi de 0.20 gol.
+
+| Método em 2023 | Acurácia | F1 macro | Empates corretos / previstos | H corretos / reais | A corretos / reais |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Poisson por rodada | 46,8% | 0,311 | 0/0 | 150/178 | 28/104 |
+| Proximidade + teto | 45,5% | 0,381 | 30/101 | 126/178 | 17/104 |
+
+**Conclusão:** A igualdade exata das taxas não ocorreu em 2023. Com diferença máxima de 0,20 gol e teto cinco, a regra encontrou 30 empates, mas criou 71 falsos empates e reduziu acertos em H e A. A rodada 10 teve seis empates reais; o teto de cinco impede reconhecer todos nessa rodada. A regra não substituiu o modelo principal. O resultado é exploratório, pois 2023 já havia sido inspecionado e ainda falta uma temporada nova.
+
 ## O que existe hoje
 
 - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -176,12 +191,13 @@ Poisson independente para gols da casa e de fora, com vantagem de mando embutida
 - Em 2023, reconheceu somente 5 dos 98 empates reais.
 - O melhor resultado exploratório para empates ainda precisa de validação em dados novos.
 - O Poisson independente não previu nenhum empate pela regra de maior probabilidade em 2023.
+- A regra de até cinco empates por rodada aumentou a revocação de D, mas reduziu acertos em H e A.
 - Ainda não há fluxo para montar features de uma partida futura.
 - A fonte processada cobre apenas até a temporada de 2024.
 
 ## Próximas etapas
 
-1. Investigar calibração e correção de placares baixos com novas validações temporais.
+1. Investigar regras de decisão e correção de placares baixos com novas validações temporais.
 2. Reunir uma temporada nova para confirmar se a melhora em empates se repete.
 3. Atualizar a fonte de dados e gerar features para partidas não disputadas.
 4. Criar uma interface somente após validar o fluxo de previsão futura.
@@ -204,3 +220,4 @@ Poisson independente para gols da casa e de fora, com vantagem de mando embutida
 - artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.
 - src/model/experiment_draws.py e artifacts/draw_experiment.json, gerado localmente.
 - src/model/experiment_poisson.py e artifacts/poisson_experiment.json, gerado localmente.
+- src/model/experiment_round_draws.py e artifacts/round_draw_experiment.json, gerado localmente.

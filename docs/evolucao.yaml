@@ -1,7 +1,7 @@
 titulo: Brasileirão Predictor
-edicao: 4
-atualizado_em: 2026-09-23
-subtitulo: Da ideia inicial aos experimentos de validação
+edicao: 5
+atualizado_em: 2026-09-24
+subtitulo: Da ideia inicial às regras de empate por rodada
 
 origem:
   data: 2026-07-25
@@ -57,6 +57,11 @@ marcos:
     titulo: Modelo de gols por Poisson
     detalhe: Forças de ataque e defesa estimadas sem olhar jogos futuros; comparação com o modelo de classes.
     evidencia: experiment_poisson.py
+    fase: Experimento
+  - data: 2026-09-24
+    titulo: Empates por rodada
+    detalhe: Taxas de gols próximas e teto de cinco empates testados sem consultar resultados futuros.
+    evidencia: experiment_round_draws.py
     fase: Experimento
 
 dados:
@@ -167,6 +172,31 @@ experimento_poisson:
     principal não foi substituído. A melhoria de empate sem perda de H e A
     ainda não foi demonstrada.
 
+experimento_rodadas:
+  protocolo: >-
+    Todas as partidas de uma rodada usam somente jogos anteriores à data do
+    primeiro jogo da rodada. A diferença máxima entre taxas de gols foi
+    escolhida em 2022 pelo maior F1 macro; o prior de cinco jogos já havia
+    sido escolhido em 2022 no experimento Poisson. Entre os jogos elegíveis, no
+    máximo cinco com menor diferença recebem a classe D; os demais recebem
+    H ou A conforme a maior taxa de gols. A avaliação usa 2023, sem 2024.
+  limite_gols: 0.20
+  teto_empates: 5
+  empates_exatamente_iguais_2023: 0
+  empates_reais_2023: 98
+  max_empates_reais_rodada_2023: 6
+  rodadas_acima_teto_2023: 1
+  rodadas_acima_teto_numeros_2023: [10]
+  referencia: {acuracia: 0.4684210526, f1_macro: 0.3108974359, log_loss: 1.0332466318, d_corretos: 0, d_previstos: 0, h_corretos: 150, a_corretos: 28}
+  regra: {acuracia: 0.4552631579, f1_macro: 0.3805377219, log_loss: 1.0332466318, d_corretos: 30, d_previstos: 101, h_corretos: 126, a_corretos: 17}
+  conclusao: >-
+    A igualdade exata das taxas não ocorreu em 2023. Com diferença máxima
+    de 0,20 gol e teto cinco, a regra encontrou 30 empates, mas criou 71
+    falsos empates e reduziu acertos em H e A. A rodada 10 teve seis empates
+    reais; o teto de cinco impede reconhecer todos nessa rodada. A regra
+    não substituiu o modelo principal. O resultado é exploratório, pois 2023
+    já havia sido inspecionado e ainda falta uma temporada nova.
+
 estado_atual:
   entregue:
     - CSV de 2020 a 2024 preparado e validado, com 1.900 jogos.
@@ -180,10 +210,11 @@ estado_atual:
     - Em 2023, reconheceu somente 5 dos 98 empates reais.
     - O melhor resultado exploratório para empates ainda precisa de validação em dados novos.
     - O Poisson independente não previu nenhum empate pela regra de maior probabilidade em 2023.
+    - A regra de até cinco empates por rodada aumentou a revocação de D, mas reduziu acertos em H e A.
     - Ainda não há fluxo para montar features de uma partida futura.
     - A fonte processada cobre apenas até a temporada de 2024.
   proximos_passos:
-    - Investigar calibração e correção de placares baixos com novas validações temporais.
+    - Investigar regras de decisão e correção de placares baixos com novas validações temporais.
     - Reunir uma temporada nova para confirmar se a melhora em empates se repete.
     - Atualizar a fonte de dados e gerar features para partidas não disputadas.
     - Criar uma interface somente após validar o fluxo de previsão futura.
@@ -195,3 +226,4 @@ fontes:
   - 'artifacts/validation_2023_diagnostics.json e data/processed/predictions_2023_validation.csv, gerados localmente.'
   - 'src/model/experiment_draws.py e artifacts/draw_experiment.json, gerado localmente.'
   - 'src/model/experiment_poisson.py e artifacts/poisson_experiment.json, gerado localmente.'
+  - 'src/model/experiment_round_draws.py e artifacts/round_draw_experiment.json, gerado localmente.'

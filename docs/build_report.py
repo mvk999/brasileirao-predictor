@@ -204,6 +204,33 @@ def verify_local_poisson_experiment(data: dict) -> None:
             raise ValueError("Empates previstos diferem no experimento Poisson.")
 
 
+def verify_local_round_experiment(data: dict) -> None:
+    path = ROOT / "artifacts/round_draw_experiment.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))
+    recorded = data["experimento_rodadas"]
+    if (recorded["limite_gols"] != measured["chosen_gap_limit"]
+            or recorded["teto_empates"] != measured["max_draws_per_round"]
+            or recorded["empates_exatamente_iguais_2023"] != measured["equal_estimated_goals_2023"]
+            or recorded["max_empates_reais_rodada_2023"] != measured["actual_draws_per_round_2023"]["maximum"]
+            or recorded["rodadas_acima_teto_2023"] != measured["actual_draws_per_round_2023"]["rounds_above_cap"]
+            or recorded["rodadas_acima_teto_numeros_2023"] != measured["actual_draws_per_round_2023"]["round_numbers_above_cap"]):
+        raise ValueError("Configuração da regra por rodada difere do relatório local.")
+    for name, key in (("referencia", "poisson_argmax"), ("regra", "round_rule")):
+        row = recorded[name]
+        actual = measured["validation_2023"][key]
+        for documented, generated in (("acuracia", "accuracy"), ("f1_macro", "f1_macro"),
+                                      ("log_loss", "log_loss")):
+            if abs(row[documented] - actual[generated]) > 0.000001:
+                raise ValueError(f"Regra por rodada desatualizada em {name}/{documented}.")
+        for label, prefix in (("D", "d"), ("H", "h"), ("A", "a")):
+            if row[f"{prefix}_corretos"] != actual["by_class"][label]["correct"]:
+                raise ValueError(f"Acertos de {label} diferem na regra por rodada.")
+        if row["d_previstos"] != actual["by_class"]["D"]["predicted"]:
+            raise ValueError("Empates previstos diferem na regra por rodada.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
@@ -414,7 +441,24 @@ def make_markdown(data: dict) -> str:
             f"{decimal(row['log_loss'])} | {row['d_corretos']}/{row['d_previstos']} | "
             f"{row['h_corretos']}/178 | {row['a_corretos']}/104 |"
         )
-    lines += ["", "**Conclusão:** " + poisson["conclusao"], "", "## O que existe hoje", ""]
+    round_experiment = data["experimento_rodadas"]
+    lines += [
+        "", "**Conclusão:** " + poisson["conclusao"],
+        "", "## Experimento: até cinco empates por rodada", "",
+        round_experiment["protocolo"], "",
+        "As taxas de gols vêm de placares históricos; elas não são xG de finalizações.",
+        f"A diferença escolhida em 2022 foi de {round_experiment['limite_gols']:.2f} gol.",
+        "", "| Método em 2023 | Acurácia | F1 macro | Empates corretos / previstos | H corretos / reais | A corretos / reais |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for key, title in (("referencia", "Poisson por rodada"), ("regra", "Proximidade + teto")):
+        row = round_experiment[key]
+        lines.append(
+            f"| {title} | {percentage(row['acuracia'])} | {decimal(row['f1_macro'])} | "
+            f"{row['d_corretos']}/{row['d_previstos']} | "
+            f"{row['h_corretos']}/178 | {row['a_corretos']}/104 |"
+        )
+    lines += ["", "**Conclusão:** " + round_experiment["conclusao"], "", "## O que existe hoje", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["limites"]]
@@ -841,6 +885,50 @@ def poisson_page(data: dict, number: int, total: int):
     return fig
 
 
+def round_rule_page(data: dict, number: int, total: int):
+    fig = page("Cinco empates por rodada: custo observado", "Regra experimental", number, total)
+    experiment = data["experimento_rodadas"]
+    reference = experiment["referencia"]
+    rule = experiment["regra"]
+    box(fig, 0.06, 0.42, 0.54, 0.39)
+    label(fig, 0.085, 0.77, "ACERTOS EM 2023 POR RESULTADO", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.12, 0.51, 0.42, 0.21], facecolor=WHITE)
+    ax.set_zorder(3)
+    x = np.arange(3)
+    original = [reference[f"{label}_corretos"] for label in ("d", "h", "a")]
+    changed = [rule[f"{label}_corretos"] for label in ("d", "h", "a")]
+    ax.bar(x - 0.16, original, 0.30, color="#B5C7CF", label="Poisson")
+    ax.bar(x + 0.16, changed, 0.30, color=TEAL, label="Regra")
+    ax.set_xticks(x, ["Empate", "Mandante", "Visitante"])
+    ax.set_ylim(0, 175)
+    ax.set_yticks([0, 50, 100, 150])
+    ax.tick_params(labelsize=8, length=0)
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=7)
+    for i, (before, after) in enumerate(zip(original, changed)):
+        ax.text(i - 0.16, before + 3, str(before), ha="center", size=7, color=MUTED)
+        ax.text(i + 0.16, after + 3, str(after), ha="center", size=7, color=TEAL, fontweight="bold")
+
+    box(fig, 0.64, 0.42, 0.30, 0.39)
+    label(fig, 0.67, 0.77, "A REGRA", size=10, color=TEAL, weight="bold")
+    label(fig, 0.67, 0.69, f"≤ {experiment['limite_gols']:.2f} gol", size=18, color=NAVY, weight="bold")
+    wrapped(fig, 0.67, 0.64, "diferença entre taxas de gols estimadas", 31, size=9, color=MUTED)
+    label(fig, 0.67, 0.53, "Até 5 empates", size=15, color=NAVY, weight="bold")
+    wrapped(fig, 0.67, 0.49, "por rodada; candidatos ordenados pela menor diferença", 31,
+            size=9, color=MUTED)
+
+    box(fig, 0.06, 0.14, 0.88, 0.22, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.32, "CONCLUSÃO", size=10, color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.275,
+            "Foram 30 empates corretos entre 101 escolhas de empate; 71 foram falsos. "
+            "Os acertos em H caíram de 150 para 126 e em A de 28 para 17. "
+            "A igualdade exata das taxas não ocorreu; a rodada 10 teve seis empates reais. "
+            "O teto foi respeitado, mas a meta de preservar H e A não foi atingida.",
+            118, size=9, color=INK)
+    return fig
+
+
 def next_page(data: dict, number: int, total: int):
     fig = page("O que falta e como acompanhar", "Próxima edição", number, total)
     current = data["estado_atual"]
@@ -872,7 +960,7 @@ def next_page(data: dict, number: int, total: int):
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
     history_chunks = [milestones[i : i + 5] for i in range(0, len(milestones), 5)] or [[]]
-    total_pages = 8 + len(history_chunks)
+    total_pages = 9 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -880,12 +968,13 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 6, total_pages),
-            model_page(data, total_pages - 5, total_pages),
-            validation_page(data, total_pages - 4, total_pages),
-            confidence_page(data, total_pages - 3, total_pages),
-            draw_experiment_page(data, total_pages - 2, total_pages),
-            poisson_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 7, total_pages),
+            model_page(data, total_pages - 6, total_pages),
+            validation_page(data, total_pages - 5, total_pages),
+            confidence_page(data, total_pages - 4, total_pages),
+            draw_experiment_page(data, total_pages - 3, total_pages),
+            poisson_page(data, total_pages - 2, total_pages),
+            round_rule_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -903,6 +992,7 @@ def main() -> None:
     verify_local_diagnostics(data)
     verify_local_draw_experiment(data)
     verify_local_poisson_experiment(data)
+    verify_local_round_experiment(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")
