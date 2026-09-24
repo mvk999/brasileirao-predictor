@@ -16,6 +16,7 @@ O projeto investiga perguntas concretas:
 - Estatísticas calculadas antes do jogo melhoram essa referência?
 - O modelo reconhece empates e vitórias do visitante ou concentra as escolhas no mandante?
 - Probabilidades melhores levam necessariamente a mais acertos em cada classe?
+- Treinar com mais temporadas melhora as decisões, ou partidas mais recentes são mais úteis?
 
 A resposta é tratada como estimativa com incerteza, não como certeza sobre o placar.
 
@@ -42,6 +43,12 @@ Também foi avaliado um modelo de **gols por Poisson independente**. Ele estima 
 
 Uma nova regra experimental escolhe empate quando as **taxas de gols estimadas** dos times diferem em até 0,20 gol e limita as escolhas a cinco por rodada. O limite foi escolhido em 2022. Em 2023, encontrou **30 empates em 101 previsões de empate**, mas os acertos de `H` caíram de 150 para 126 e os de `A` de 28 para 17, na comparação com o Poisson sem a regra. A acurácia caiu de 46,8% para 45,5%. A regra não entrou no modelo principal; veja [`experiment_round_draws.py`](src/model/experiment_round_draws.py).
 
+### Experimento com histórico longo
+
+Para investigar se aprender com mais anos ajuda, a mesma regressão foi ajustada antes de cada temporada com as **3, 5, 10 temporadas completas mais recentes** ou com **todas as temporadas anteriores disponíveis**. No teste temporal de 2018–2022, a média do F1 macro foi **0,293** com 3 temporadas e **0,237** com todas. O log loss médio foi **1,049** e **1,039**, respectivamente: mais histórico melhorou um pouco as probabilidades, mas piorou as decisões por classe.
+
+Em 2023, o treino com 3 temporadas teve **49,2% de acurácia, F1 macro 0,331 e 5 empates corretos**; com todos os anos disponíveis, **46,3%, F1 macro 0,243 e nenhum empate previsto**. São avaliações retrospectivas e esse recorte de 3 anos difere do modelo principal de 2024. A hipótese, o protocolo e os resultados completos estão em [`experiment_long_history.py`](src/model/experiment_long_history.py) e no relatório. O modelo principal não foi substituído.
+
 Os gráficos, matrizes de confusão e a trajetória do projeto estão no [relatório de evolução](docs/EVOLUCAO.md) e no [PDF](docs/evolucao-do-projeto.pdf). As previsões jogo a jogo são arquivos gerados localmente, em `data/processed/`.
 
 ## How it works
@@ -62,7 +69,7 @@ Avaliação retrospectiva ──→ métricas, diagnósticos e relatório
 2. **Preparação:** o script confere colunas, datas, clubes, rodadas, placares e duplicatas. O resultado `H/D/A` é calculado a partir dos gols.
 3. **Engenharia de atributos:** o notebook organiza o histórico de cada clube em ordem cronológica e calcula médias dos cinco jogos anteriores, gerais e por mando. Cada jogo recebe seis atributos do mandante e seis do visitante.
 4. **Treino:** um pipeline ajusta valores ausentes e escala apenas com os dados do período de treino; depois aprende uma regressão logística.
-5. **Avaliação:** as previsões são comparadas com resultados de temporadas posteriores. Scripts separados investigam limites de empate e um modelo de gols.
+5. **Avaliação:** as previsões são comparadas com resultados de temporadas posteriores. Scripts separados investigam limites de empate, um modelo de gols e janelas de treinamento histórico.
 
 Os scripts atuais recebem **arquivos CSV**, não requisições de uma API. Suas saídas são CSVs de previsões, JSONs de métricas, um modelo `joblib` e a documentação gerada.
 
@@ -71,6 +78,8 @@ Os scripts atuais recebem **arquivos CSV**, não requisições de uma API. Suas 
 A fonte é o arquivo [`campeonato-brasileiro-full.csv` do Brasileirao_Dataset](https://github.com/adaoduque/Brasileirao_Dataset). O pipeline usa ID, rodada, data, mandante, visitante, placares, arena e estados dos clubes. A partir do placar, calcula o alvo `resultado`.
 
 O recorte usa as temporadas **2020 a 2024**. Jogos de janeiro e fevereiro de 2021 que concluíram o Brasileirão 2020 são atribuídos à temporada 2020, conforme a regra explícita em [`prepare_matches.py`](src/data/prepare_matches.py). A validação exige 380 jogos, 20 clubes e 38 rodadas por temporada.
+
+O experimento de histórico longo usa **18 temporadas completas e 6.840 partidas**: 2006–2015 e 2017–2024. A fonte local começa em 2003, portanto não permite começar em 2000; 2003–2005 tinham formatos de 24 ou 22 clubes, e 2016 tem apenas 379 dos 380 jogos esperados no CSV. Essas temporadas foram excluídas do comparativo de 20 clubes. O script confere a estrutura antes do treino.
 
 Os dados brutos e processados ficam em `data/raw/` e `data/processed/`, ignorados pelo Git. Médias históricas dos primeiros jogos de um clube podem estar vazias; isso expressa ausência de histórico, não um resultado igual a zero. O pipeline do modelo aprende a mediana de substituição apenas no conjunto de treino.
 
@@ -82,19 +91,22 @@ Os dados brutos e processados ficam em `data/raw/` e `data/processed/`, ignorado
 
 **Experimentos.** O limite de empate é escolhido em 2022 e comparado em 2023. O modelo de gols segue a ideia de forças de ataque e defesa estudada por [Maher (1982)](https://doi.org/10.1111/j.1467-9574.1982.tb00782.x): usa resultados anteriores à data de cada partida, escolhe a intensidade de regularização em 2022 e compara seu desempenho em 2023. Sua versão atual usa Poissons independentes; ela não implementa a correção de placares baixos de [Dixon e Coles (1997)](https://doi.org/10.1111/1467-9876.00065). Nenhum desses experimentos substitui o modelo principal ou constitui previsão de uma partida futura.
 
+**Treino com mais anos.** O experimento de histórico longo refaz o ajuste da regressão para cada ano avaliado, usando somente temporadas anteriores. Os 12 atributos continuam sendo médias dos últimos cinco jogos do clube **naquela temporada**, calculadas antes de cada partida. O script [`build_features.py`](src/data/build_features.py) reproduz os atributos do notebook de 2020–2024, permitindo aplicar o mesmo processo aos anos antigos. Isso é aprendizado supervisionado com readequação periódica: o modelo aprende relações entre atributos e resultados conhecidos. Não é uma LLM nem memoriza continuamente cada jogo após a previsão.
+
 Na regra por rodada, todas as dez partidas usam um retrato do histórico disponível **antes do primeiro jogo da rodada**. Isso impede que o resultado de um jogo da rodada influencie a decisão para outro. As taxas calculadas com placares passados não são **xG de finalizações**: xG, no sentido usual, estima a chance de cada finalização virar gol a partir de suas características, como explica a [StatsBomb](https://statsbomb.com/soccer-metrics/expected-goals-xg-explained/). Esta base não contém esses eventos.
 
 ## Technical Decisions
 
 | Decisão | Motivo | Consequência ou limite |
 | --- | --- | --- |
-| Validar temporadas completas | Detectar recortes incompletos e inconsistências estruturais | O pipeline espera exatamente o recorte 2020–2024 |
+| Validar temporadas completas | Detectar recortes incompletos e inconsistências estruturais | O pipeline principal usa 2020–2024; o experimento longo valida 18 temporadas separadamente |
 | Ordenar partidas antes das médias históricas | Impedir que o resultado do próprio jogo entre nos atributos | Primeiros jogos têm médias ausentes |
 | Separar treino e avaliação por temporada | Respeitar a ordem em que os resultados seriam conhecidos | Há poucas temporadas para confirmar generalização |
 | Usar uma referência simples antes de modelos mais complexos | Medir o ganho real de cada abordagem | A regressão ainda tem baixo desempenho em empates |
 | Registrar métricas por classe e log loss | Expor erros que a acurácia geral esconde | Melhor probabilidade não garante melhor decisão por classe |
 | Testar o teto de cinco empates como hipótese | Medir a regra sugerida sem consultar o resultado real ao escolher empates | A rodada 10 de 2023 teve seis empates reais; o teto impede reconhecer todos |
 | Manter experimentos em scripts separados | Preservar uma referência reproduzível enquanto novas hipóteses são avaliadas | Resultados experimentais ainda exigem confirmação |
+| Comparar janelas de 3, 5, 10 anos e histórico completo | Medir o efeito de dados antigos antes de incorporá-los ao modelo principal | Mais anos reduziram o log loss médio, mas pioraram o F1 macro |
 
 ## Technologies
 
@@ -112,12 +124,15 @@ Na regra por rodada, todas as dez partidas usam um retrato do histórico dispon�
 ```text
 brasileirao-predictor/
 ├── src/
-│   ├── data/prepare_matches.py       # limpeza e validação do CSV
+│   ├── data/
+│   │   ├── prepare_matches.py       # limpeza e validação do CSV
+│   │   └── build_features.py        # atributos para temporadas arbitrárias
 │   └── model/
 │       ├── train_baseline.py         # referência, treino e avaliação
 │       ├── experiment_draws.py       # limites e sinais de equilíbrio
 │       ├── experiment_poisson.py     # modelo experimental de gols
-│       └── experiment_round_draws.py # regra de empate por rodada
+│       ├── experiment_round_draws.py # regra de empate por rodada
+│       └── experiment_long_history.py # treino com diferentes janelas históricas
 ├── notebooks/
 │   ├── 01_data_understanding.ipynb   # exploração da fonte
 │   └── 02_feature_engineering.ipynb  # atributos históricos por partida
@@ -153,11 +168,12 @@ python src/model/train_baseline.py
 python -m src.model.experiment_draws
 python -m src.model.experiment_poisson
 python -m src.model.experiment_round_draws
+python -m src.model.experiment_long_history
 python -m pytest -q
 python docs/build_report.py
 ```
 
-A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O experimento por rodada mostra `Limite escolhido em 2022: 0.20 gol; teto: 5 empates/rodada`. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
+A preparação deve informar **1.900 partidas**; o notebook de atributos termina com `Partidas: 1900 | Features: 12`. O treino imprime métricas para 2023 e 2024; os experimentos imprimem comparações de 2023. O experimento por rodada mostra `Limite escolhido em 2022: 0.20 gol; teto: 5 empates/rodada`. O experimento histórico termina com `Partidas: 6840 | Temporadas completas: 18 | Features: 12` e `Melhor F1 macro médio em 2018–2022: recent_3`. Ele salva CSV e JSON locais ignorados pelo Git. O `pytest` informa o total de testes aprovados. O gerador de documentação escreve `docs/EVOLUCAO.md` e `docs/evolucao-do-projeto.pdf`. Nenhuma variável de ambiente é exigida por esse fluxo; `.env.example` é apenas uma referência para possíveis integrações futuras.
 
 ## Evaluation
 
@@ -176,6 +192,7 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 - A regra de taxas próximas reconheceu mais empates, mas reduziu os acertos de `H` e `A`; o teto de cinco não vem de uma propriedade estatística demonstrada.
 - Os atributos cobrem forma recente e gols, mas não capturam escalações, lesões, contexto tático ou outras condições da partida.
 - Há somente cinco temporadas no recorte atual; mudanças de elenco e clubes promovidos dificultam extrapolar forças entre anos.
+- O histórico longo exclui temporadas ausentes, com formato diferente ou incompletas; os atributos reiniciam a cada temporada e não representam força acumulada entre anos.
 - As análises de 2023 e 2024 já influenciaram a investigação. Uma nova temporada é necessária para uma confirmação mais independente.
 - O projeto ainda não possui rotina de atualização automática, entrada para jogos não disputados, API ou interface de usuário.
 - Os resultados são estudos retrospectivos e não constituem recomendação de aposta.
@@ -185,14 +202,17 @@ O diagnóstico de 2023 e os experimentos mostram por que é necessário olhar al
 1. Obter e validar temporadas posteriores a 2024 para uma avaliação mais independente.
 2. Investigar calibração das probabilidades, regras de decisão e a correção de placares baixos de Dixon–Coles, sem assumir que melhorarão empates.
 3. Testar atributos anteriores ao jogo que representem força dos times e contexto de forma verificável.
-4. Automatizar a atualização da fonte e criar um fluxo seguro para montar atributos de partidas futuras.
-5. Considerar API ou interface visual após validar esse fluxo e os resultados fora da amostra.
+4. Investigar pesos temporais para aproveitar jogos antigos sem lhes dar o mesmo peso que aos recentes, usando validação por temporada.
+5. Automatizar a atualização da fonte e criar um fluxo seguro para montar atributos de partidas futuras.
+6. Considerar API ou interface visual após validar esse fluxo e os resultados fora da amostra.
 
 ## What I learned
 
 Ao construir este projeto, aprendi a tratar uma data de calendário e uma temporada esportiva como conceitos diferentes; a proteger a ordem cronológica na engenharia de atributos; a interpretar valores ausentes no início de uma série; e a separar treino e avaliação de acordo com o momento em que cada resultado se tornou conhecido.
 
 A comparação por classe mostrou que **acurácia sozinha é insuficiente**. Os experimentos com empates e gols reforçaram outra distinção: um modelo pode atribuir probabilidades melhores aos resultados e ainda tomar decisões piores quando precisa escolher uma única classe. Registrar resultados negativos e preservar a referência torna a evolução do projeto verificável.
+
+Ao ampliar o histórico, aprendi a verificar se cada temporada tem o mesmo formato e a comparar janelas de treino antes de presumir que mais dados sempre ajudam. Um ajuste com todos os anos anteriores reduziu a perda probabilística média, mas reconheceu menos empates; isso mostra que a escolha de dados de treino também é uma decisão de modelagem.
 
 ## Author
 

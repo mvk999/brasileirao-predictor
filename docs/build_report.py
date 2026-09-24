@@ -231,11 +231,36 @@ def verify_local_round_experiment(data: dict) -> None:
             raise ValueError("Empates previstos diferem na regra por rodada.")
 
 
+def verify_local_long_history_experiment(data: dict) -> None:
+    path = ROOT / "artifacts/long_history_experiment.json"
+    if not path.is_file():
+        return
+    measured = json.loads(path.read_text(encoding="utf-8"))
+    recorded = data["experimento_historico_longo"]
+    if (recorded["temporadas_completas"] != len(measured["source_years"])
+            or recorded["partidas"] != measured["source_games"]):
+        raise ValueError("Cobertura do histórico longo difere do relatório local.")
+    for section, actual_section in (("metricas_medias_2018_2022", "backtest_average"),
+                                    ("validacao_2023", "retrospective"),
+                                    ("avaliacao_2024", "retrospective")):
+        for strategy, row in recorded[section].items():
+            actual = measured[actual_section][strategy] if actual_section == "backtest_average" else measured[actual_section][section[-4:]][strategy]
+            for documented, generated in (("acuracia", "accuracy"), ("f1_macro", "f1_macro"),
+                                          ("log_loss", "log_loss")):
+                if abs(row[documented] - actual[generated]) > 0.000001:
+                    raise ValueError(f"Histórico longo desatualizado em {section}/{strategy}/{documented}.")
+            if "empates_corretos" in row:
+                if (row["empates_corretos"] != actual["by_class"]["D"]["correct"]
+                        or row["empates_previstos"] != actual["by_class"]["D"]["predicted"]):
+                    raise ValueError(f"Empates diferem em {section}/{strategy}.")
+
+
 def make_markdown(data: dict) -> str:
     model = data["modelo"]
     metrics = model["metricas"]
     validation = data["diagnostico_validacao_2023"]
     total_games = f"{data['dados']['total_jogos']:,}".replace(",", ".")
+    long_history_games = f"{data['experimento_historico_longo']['partidas']:,}".replace(",", ".")
     lines = [
         f"# Evolução do {data['titulo']}",
         "",
@@ -458,7 +483,36 @@ def make_markdown(data: dict) -> str:
             f"{row['d_corretos']}/{row['d_previstos']} | "
             f"{row['h_corretos']}/178 | {row['a_corretos']}/104 |"
         )
-    lines += ["", "**Conclusão:** " + round_experiment["conclusao"], "", "## O que existe hoje", ""]
+    long_history = data["experimento_historico_longo"]
+    lines += [
+        "", "**Conclusão:** " + round_experiment["conclusao"],
+        "", "## Experimento: aprender com mais temporadas", "",
+        long_history["protocolo"], "", long_history["ausencias"], "",
+        f"A base experimental contém **{long_history_games} jogos** em "
+        f"**{long_history['temporadas_completas']} temporadas completas**, com os mesmos 12 atributos.",
+        "", "| Treino anterior ao ano avaliado | Acurácia média 2018–2022 | F1 macro médio | Log loss médio |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for key, name in (("recent_3", "3 temporadas"), ("recent_5", "5 temporadas"),
+                      ("recent_10", "10 temporadas"), ("all", "Todo o histórico")):
+        row = long_history["metricas_medias_2018_2022"][key]
+        lines.append(
+            f"| {name} | {percentage(row['acuracia'])} | "
+            f"{decimal(row['f1_macro'])} | {decimal(row['log_loss'])} |"
+        )
+    lines += [
+        "", "| Ano | Treino | Acurácia | F1 macro | Log loss | Empates corretos / previstos |",
+        "| --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    for year, section in ((2023, "validacao_2023"), (2024, "avaliacao_2024")):
+        for key, name in (("recent_3", "3 temporadas"), ("all", "Todo o histórico")):
+            row = long_history[section][key]
+            lines.append(
+                f"| {year} | {name} | {percentage(row['acuracia'])} | "
+                f"{decimal(row['f1_macro'])} | {decimal(row['log_loss'])} | "
+                f"{row['empates_corretos']}/{row['empates_previstos']} |"
+            )
+    lines += ["", "**Conclusão:** " + long_history["conclusao"], "", "## O que existe hoje", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["entregue"]]
     lines += ["", "## Limites conhecidos", ""]
     lines += [f"- {item}" for item in data["estado_atual"]["limites"]]
@@ -929,16 +983,60 @@ def round_rule_page(data: dict, number: int, total: int):
     return fig
 
 
+def long_history_page(data: dict, number: int, total: int):
+    fig = page("Mais anos melhoram o modelo?", "Treino temporal", number, total)
+    experiment = data["experimento_historico_longo"]
+    rows = experiment["metricas_medias_2018_2022"]
+    keys = ("recent_3", "recent_5", "recent_10", "all")
+    names = ("3 anos", "5 anos", "10 anos", "Todos")
+
+    box(fig, 0.06, 0.42, 0.42, 0.39)
+    label(fig, 0.085, 0.77, "F1 MACRO MÉDIO · 2018–2022", size=10, color=TEAL, weight="bold")
+    ax = fig.add_axes([0.11, 0.51, 0.33, 0.21], facecolor=WHITE)
+    ax.set_zorder(3)
+    values = [rows[key]["f1_macro"] for key in keys]
+    ax.bar(range(4), values, color=[TEAL, "#8AC3C0", "#A5D0CE", "#B5C7CF"])
+    ax.set_xticks(range(4), names)
+    ax.set_ylim(0, 0.38)
+    ax.set_yticks([0, 0.1, 0.2, 0.3])
+    ax.tick_params(labelsize=8, length=0)
+    ax.grid(axis="y", color=LINE)
+    ax.set_axisbelow(True)
+    for i, value in enumerate(values):
+        ax.text(i, value + 0.009, decimal(value), ha="center", size=8, color=INK)
+    label(fig, 0.085, 0.46, "Maior F1: treino com 3 temporadas recentes", size=8, color=MUTED)
+
+    box(fig, 0.52, 0.42, 0.42, 0.39)
+    label(fig, 0.55, 0.77, "LOG LOSS MÉDIO · 2018–2022", size=10, color=TEAL, weight="bold")
+    for i, (key, name) in enumerate(zip(keys, names)):
+        y = 0.69 - i * 0.072
+        label(fig, 0.55, y, name, size=10, color=INK)
+        label(fig, 0.86, y, decimal(rows[key]["log_loss"]), size=10,
+              color=TEAL if key == "all" else MUTED, weight="bold" if key == "all" else "normal",
+              ha="right")
+    label(fig, 0.55, 0.445, "Menor é melhor; todos os anos reduzem esta perda.",
+          size=8, color=MUTED)
+
+    box(fig, 0.06, 0.14, 0.88, 0.22, face="#E6F3F2", edge="#C3E3E0")
+    label(fig, 0.085, 0.32, "VERIFICAÇÃO RETROSPECTIVA DE 2023", size=10, color=TEAL, weight="bold")
+    wrapped(fig, 0.085, 0.275,
+            "Com três temporadas recentes: acurácia 49,2%, F1 macro 0,331 e 5 empates corretos. "
+            "Com todo o histórico desde 2006: acurácia 46,3%, F1 macro 0,243 e zero empates previstos. "
+            "A fonte não tem 2000–2002; 2016 contém 379 jogos. Nenhum método novo substituiu a referência.",
+            116, size=9, color=INK)
+    return fig
+
+
 def next_page(data: dict, number: int, total: int):
     fig = page("O que falta e como acompanhar", "Próxima edição", number, total)
     current = data["estado_atual"]
-    box(fig, 0.06, 0.43, 0.42, 0.38)
+    box(fig, 0.06, 0.40, 0.42, 0.41)
     label(fig, 0.09, 0.765, "ENTREGUE", size=10, color=TEAL, weight="bold")
     for i, text in enumerate(current["entregue"]):
         y = 0.71 - i * 0.061
         label(fig, 0.09, y, "✓", size=12, color=TEAL, weight="bold")
         wrapped(fig, 0.12, y + 0.001, text, 43, size=9, color=INK)
-    box(fig, 0.52, 0.43, 0.42, 0.38)
+    box(fig, 0.52, 0.40, 0.42, 0.41)
     label(fig, 0.55, 0.765, "PRÓXIMAS ETAPAS", size=10, color=TEAL, weight="bold")
     for i, text in enumerate(current["proximos_passos"]):
         y = 0.71 - i * 0.077
@@ -959,8 +1057,8 @@ def next_page(data: dict, number: int, total: int):
 
 def make_pdf(data: dict) -> None:
     milestones = data["marcos"]
-    history_chunks = [milestones[i : i + 5] for i in range(0, len(milestones), 5)] or [[]]
-    total_pages = 9 + len(history_chunks)
+    history_chunks = [milestones[i : i + 6] for i in range(0, len(milestones), 6)] or [[]]
+    total_pages = 10 + len(history_chunks)
     figures = [cover(data, total_pages)]
     figures.extend(
         history_page(data, chunk, 2 + index, total_pages)
@@ -968,13 +1066,14 @@ def make_pdf(data: dict) -> None:
     )
     figures.extend(
         [
-            data_page(data, total_pages - 7, total_pages),
-            model_page(data, total_pages - 6, total_pages),
-            validation_page(data, total_pages - 5, total_pages),
-            confidence_page(data, total_pages - 4, total_pages),
-            draw_experiment_page(data, total_pages - 3, total_pages),
-            poisson_page(data, total_pages - 2, total_pages),
-            round_rule_page(data, total_pages - 1, total_pages),
+            data_page(data, total_pages - 8, total_pages),
+            model_page(data, total_pages - 7, total_pages),
+            validation_page(data, total_pages - 6, total_pages),
+            confidence_page(data, total_pages - 5, total_pages),
+            draw_experiment_page(data, total_pages - 4, total_pages),
+            poisson_page(data, total_pages - 3, total_pages),
+            round_rule_page(data, total_pages - 2, total_pages),
+            long_history_page(data, total_pages - 1, total_pages),
             next_page(data, total_pages, total_pages),
         ]
     )
@@ -993,6 +1092,7 @@ def main() -> None:
     verify_local_draw_experiment(data)
     verify_local_poisson_experiment(data)
     verify_local_round_experiment(data)
+    verify_local_long_history_experiment(data)
     MARKDOWN.write_text(make_markdown(data), encoding="utf-8")
     make_pdf(data)
     print(f"Markdown: {MARKDOWN}")

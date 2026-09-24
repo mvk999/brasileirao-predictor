@@ -50,7 +50,9 @@ def load_raw_matches(path: Path = RAW_MATCHES_PATH) -> pd.DataFrame:
     return matches
 
 
-def prepare_matches(raw_matches: pd.DataFrame) -> pd.DataFrame:
+def prepare_matches(
+    raw_matches: pd.DataFrame, seasons: tuple[int, ...] = SEASONS
+) -> pd.DataFrame:
     """Aplica as regras de limpeza e padronização definidas na análise."""
     matches = raw_matches.copy()
     matches["data"] = pd.to_datetime(matches["data"], format="%d/%m/%Y")
@@ -61,7 +63,7 @@ def prepare_matches(raw_matches: pd.DataFrame) -> pd.DataFrame:
     season_2020_completion = matches["data"].between("2021-01-01", "2021-02-25")
     matches.loc[season_2020_completion, "temporada"] = 2020
 
-    matches = matches[matches["temporada"].isin(SEASONS)].copy()
+    matches = matches[matches["temporada"].isin(seasons)].copy()
     matches = matches[
         [
             "ID",
